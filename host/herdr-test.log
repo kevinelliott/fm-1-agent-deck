@@ -1,0 +1,23 @@
+[agentdeck] backend=herdr mode=simulate proto=v1
+[agentdeck] herdr socket: /home/hatch/.config/herdr/herdr.sock
+[agentdeck] commands: select N | start | approve | deny | interrupt | prompt TEXT | quit
+[frame] HELLO_ACK proto=1
+[discover] slot 0: claude w1:p1 (id=w1:p1, kind=claude)
+[discover] slot 1: ad-claude-w1-p2 (id=w1:p2, kind=claude)
+[frame] RESET (clear all slots)
+[frame] META agents=2 blocked=0
+[state] slot 0 claude w1:p1: NONE -> IDLE
+[frame] SLOT slot=0 state=IDLE kind=claude name=claude w1:p1
+[state] slot 1 ad-claude-w1-p2: NONE -> IDLE
+[frame] SLOT slot=1 state=IDLE kind=claude name=ad-claude-w1-p2
+[frame] DETAIL line=0: RECEIVED:input-text
+[frame] DETAIL line=1: 1
+[frame] DETAIL line=2: RECEIVED:1
+[frame] DETAIL line=3: EDIT APPLIED - task complete
+[frame] DETAIL line=4: ^[^C
+[frame] DETAIL line=5: root@htch-runtime:~/workspace/fm1-agent-deck# echo PROMPT_FA
+[frame] DETAIL line=6: PROMPT_FALLBACK_OK
+[frame] DETAIL line=7: root@htch-runtime:~/workspace/fm1-agent-deck#
+[select] slot 0 (claude w1:p1)
+[action] approve -> slot 0 (claude w1:p1)
+[agentdeck] bye

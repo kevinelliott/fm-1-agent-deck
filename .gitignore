@@ -1,0 +1,5 @@
+# Upstream Dinghy clone (reference only — the adapted build tree is firmware-build/)
+vendor-dinghy/
+__pycache__/
+*.pyc
+.DS_Store

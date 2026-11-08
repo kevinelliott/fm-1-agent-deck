@@ -1,0 +1,48 @@
+[agentdeck] backend=tmux mode=simulate proto=v1
+[agentdeck] commands: select N | start | approve | deny | interrupt | prompt TEXT | quit
+[frame] HELLO_ACK proto=1
+[discover] slot 0: a-claude-approval (id=%1, kind=claude)
+[discover] slot 1: b-spinner (id=%2, kind=shell)
+[discover] slot 2: c-idle (id=%3, kind=shell)
+[discover] slot 3: z-unrelated-extra (id=%0, kind=shell)
+[frame] RESET (clear all slots)
+[frame] META agents=4 blocked=1
+[state] slot 0 a-claude-approval: NONE -> BLOCKED
+[frame] SLOT slot=0 state=BLOCKED kind=claude name=a-claude-approval
+[state] slot 1 b-spinner: NONE -> IDLE
+[frame] SLOT slot=1 state=IDLE kind=shell name=b-spinner
+[state] slot 2 c-idle: NONE -> IDLE
+[frame] SLOT slot=2 state=IDLE kind=shell name=c-idle
+[state] slot 3 z-unrelated-extra: NONE -> IDLE
+[frame] SLOT slot=3 state=IDLE kind=shell name=z-unrelated-extra
+[frame] DETAIL line=0: Claude Code (fake fixture for Agent Deck test)
+[frame] DETAIL line=1: I want to edit host/agentdeck.py to add a feature.
+[frame] DETAIL line=2: Do you want to proceed?
+[frame] DETAIL line=3: 1. Yes
+[frame] DETAIL line=4: 2. No, and tell Claude what to do differently
+[frame] DETAIL line=5: choice:
+[state] slot 1 b-spinner: IDLE -> WORKING
+[frame] SLOT slot=1 state=WORKING kind=shell name=b-spinner
+[select] slot 0 (a-claude-approval)
+[frame] DETAIL line=0: Claude Code (fake fixture for Agent Deck test)
+[frame] DETAIL line=1: I want to edit host/agentdeck.py to add a feature.
+[frame] DETAIL line=2: Do you want to proceed?
+[frame] DETAIL line=3: 1. Yes
+[frame] DETAIL line=4: 2. No, and tell Claude what to do differently
+[frame] DETAIL line=5: choice:
+[action] approve -> slot 0 (a-claude-approval)
+[frame] DETAIL line=5: choice: 1
+[frame] DETAIL line=6: RECEIVED:1
+[frame] DETAIL line=7: EDIT APPLIED - task complete
+[agentdeck] bye
+--- checks ---
+PASS: slot 0: a-claude-approval
+PASS: b-spinner (id=
+PASS: c-idle (id=
+PASS: state=BLOCKED
+PASS: state=WORKING
+PASS: state=IDLE
+PASS: approve -> slot 0
+PASS: RECEIVED:1
+PASS: EDIT APPLIED - task complete
+SIMULATE TEST: ALL PASS

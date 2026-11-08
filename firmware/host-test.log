@@ -1,0 +1,16 @@
+     1 ms  MIDI out BF 117 1
+  1000 ms  screen -> build/host/agentdeck-1000.ppm
+  1000 ms  MIDI out BF 116 1
+  2000 ms  MIDI out BF 116 1
+  2020 ms  screen -> build/host/agentdeck-2020.ppm
+  2320 ms  MIDI out BF 120 1
+  2320 ms  MIDI out 9F 49 127
+  2620 ms  MIDI out 8F 49 0
+  2820 ms  MIDI out BF 115 127
+  2821 ms  MIDI out BF 115 0
+  3000 ms  screen -> build/host/agentdeck-3000.ppm
+  3000 ms  MIDI out BF 116 1
+  3120 ms  MIDI out BF 85 65
+  3120 ms  MIDI out BF 120 0
+  3420 ms  screen -> build/host/agentdeck-3420.ppm
+sound  -> build/host/agentdeck.wav (163840 frames)
