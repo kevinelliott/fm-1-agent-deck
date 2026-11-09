@@ -8,10 +8,11 @@ running on your computer.
 
 ▶ **[Play Agent Deck live in your browser](https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt)**
 — the shipped firmware package, running in **fm1-emu** on this project's
-own player page. It starts by itself and plays a scripted session:
-daemon frames in, pages walked, the blocked agent selected. (GitHub
-READMEs can't run iframes, so the live embed lives on the project
-site; the animation above is that same session, captured from
+own player page. One click on **Start** (browsers hold back sound until
+a click; the deck itself is silent) and it plays a scripted session by
+itself: daemon frames in, pages walked, the blocked agent selected.
+(GitHub READMEs can't run iframes, so the live embed lives on the
+project site; the animation above is that same session, captured from
 fm1-emu. Device-only view for embedding elsewhere:
 [embed link](https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt&embed=1).)
 
@@ -109,7 +110,7 @@ turned to walk the pages — captured by
 fm1-emu player (a vendored copy of the emulator whose only firmware
 is Agent Deck — see [`docs/play/`](docs/play/README.md)):
 **[kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt](https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt)**.
-It starts by itself and plays the same scripted session as the
+One click on **Start** and it plays the same scripted session as the
 captures above; afterwards the panel is yours — click the keys, turn
 the ALGORITHM knob, open the picker. A plain visit (no `script=`)
 boots the deck to `NO HOST`: it is a controller, and it wants its

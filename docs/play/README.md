@@ -6,11 +6,12 @@ Pages so the README can link a deck that actually runs.
 
 - **Player (full page):** `index.html` at this folder's Pages URL
 - **Auto-playing demo:** add `?fw=agentdeck&script=demo.txt` — the
-  emulator's try-out mode starts by itself and plays `demo.txt`: the
+  emulator's try-out mode plays `demo.txt` by itself after the page's
+  one Start click (browsers gate sound behind a click; the deck is
+  silent, but the emulator's audio thread is what starts): the
   daemon's frame stream goes in through the MIDI IN jack at ~2 s,
   the ALGORITHM encoder walks GRID → DETAIL → APPROVALS, and a key
-  press selects the blocked agent. Agent Deck is silent (it is a
-  controller), so nothing waits on an audio unlock.
+  press selects the blocked agent.
 - **Embed (device only):** add `&embed=1` — just the FM-1 and its
   controls, for iframing into another site.
 
