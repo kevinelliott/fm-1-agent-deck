@@ -7,11 +7,10 @@ running on your computer.
 ![An FM-1 in White and Blue running Agent Deck — the screen shows the firmware's GRID page: CLAUDE-1 working, CODEX-2 blocked](docs/fm1-agent-deck-hero.jpg)
 
 *What that picture is: a visualization of the FM-1 (White and Blue colorway)
-running Agent Deck. The screen content is not a mockup — it is the firmware's
-real GRID page, rendered by the host emulator
-([`firmware/screen-grid.png`](firmware/screen-grid.png)) and composited into
-the display. Real hardware photos will replace this render once the first
-unit is flashed.*
+running Agent Deck. The screen content is not a mockup — it is the shipped
+firmware package itself, running on the emulated FM-1 chip in
+[fm1-emu](#see-it-running--fm1-emu) and composited into the display. Real
+hardware photos will replace this render once the first unit is flashed.*
 
 ## Why an FM synth?
 
@@ -59,17 +58,64 @@ switching windows.
 
 > **Status (Nov 2026):** built and verified end-to-end *without* hardware.
 > The host daemon is live-tested against real tmux sessions and a real
-> Herdr server; the firmware runs in Dinghy's host emulator; and a real
-> flashable package (`dist/agentdeck-0.1.fwsc`) has been built with the
-> JieLi toolchain and validated by the installer's own package loader.
-> The author's FM-1 arrives ~early Dec 2026 — first on-hardware flash is
-> the only untested step, and the [arrival-day guide](#arrival-day-read-this-before-plugging-anything-in)
+> Herdr server; the firmware logic runs in Dinghy's host emulator; and the
+> real flashable package (`dist/agentdeck-0.1.fwsc`) — built with the
+> JieLi toolchain and validated by the installer's own package loader —
+> **boots and runs in [fm1-emu](https://github.com/joakimeriksson/fm1-emu),
+> the chip-level FM-1 emulator**, driven there by the daemon's own frame
+> stream (see [See it running](#see-it-running--fm1-emu)). The author's
+> first FM-1 arrives mid-Nov 2026 — the on-hardware flash is the only
+> untested step, and the [arrival-day guide](#arrival-day-read-this-before-plugging-anything-in)
 > below is the checklist for it.
 
 > ⚠️ **Flashing custom firmware is at your own risk.** The FM-1's flash is
 > single-bank; an interrupted write can leave the unit dark until rescued
 > via the chip's mask-ROM boot mode. Read the risk notes in the
 > arrival-day section before you flash anything — this project or any other.
+
+---
+
+## See it running — fm1-emu
+
+No FM-1 on your desk? Neither is there one here yet. Agent Deck is
+developed and tested against **[fm1-emu](https://github.com/joakimeriksson/fm1-emu)**,
+Joakim Eriksson's emulator for the FM-1: it emulates the JieLi AC791N
+chip itself (both CPU cores, screen, keys, encoders, MIDI), so firmware
+packages run in it *unchanged* — the same `.fwsc` you would flash.
+
+These are not mockups. They are the LCD of `dist/agentdeck-0.1.fwsc`
+booted in fm1-emu, fed the exact frame stream the real daemon sends
+(injected through the FM-1's MIDI IN jack, which the firmware's platform
+merges into the same queue as USB MIDI), with the ALGORITHM encoder
+turned to walk the pages — captured by
+[`tools/emu_test.py`](tools/emu_test.py):
+
+| GRID | DETAIL | APPROVALS |
+|---|---|---|
+| ![GRID page in fm1-emu: two agents, CLAUDE-1 working, CODEX-2 blocked, HOST OK](docs/emu-grid.png) | ![DETAIL page in fm1-emu: CLAUDE-1 working, its latest output lines](docs/emu-detail.png) | ![APPROVALS page in fm1-emu: CODEX-2 blocked, waiting on you](docs/emu-approvals.png) |
+
+**Run it yourself, in the browser:** fm1-emu also runs as a web page —
+**[joakimeriksson.github.io/fm1-emu](https://joakimeriksson.github.io/fm1-emu/)**.
+Download [`dist/agentdeck-0.1.fwsc`](dist/agentdeck-0.1.fwsc), choose
+**Open .fwsc…** on that page, pick the file, and press **Start**: the
+whole FM-1 panel appears, clickable and playable from your keyboard.
+Agent Deck boots to `NO HOST` (it is a controller — it wants its daemon);
+turn the ALGORITHM knob to flip through the pages. The emulator page
+also supports an embed mode (`&embed=1` shows just the device), which is
+how firmware sites window it into their own pages.
+
+**Run it natively:** `tools/get_emu.sh` fetches the fm1-emu release
+binary, and `fm1-live` (included) opens the emulated FM-1 in a window —
+screen, panel, audio, and every MIDI input of your computer.
+
+One honest limit: in the emulator the deck has no live daemon behind it,
+so what you see is the panel, the pages and the protocol working against
+canned frames — for the full loop, pair the daemon with tmux/Herdr in
+`--simulate` mode (below), or wait for hardware like the rest of us. A
+one-click `?fw=` deep link from this README becomes possible once Agent
+Deck is listed on the [FM-1 Firmware Hub](https://thefirmwarehub.com/)
+— the Hub only lists firmwares already tested on real hardware, so that
+waits until after arrival day.
 
 ---
 
@@ -89,6 +135,12 @@ python3 host/agentdeck.py --backend auto --simulate
 #    Claude Code approval prompt, a spinner, an idle shell — and drives the
 #    daemon through discovery → state detection → a real approve):
 sh host/test_simulate.sh        # writes host/simulate-test.log
+
+# 3. Or boot the real firmware package on the emulated FM-1 chip and
+#    watch the deck itself work (fm1-emu; see "See it running" above):
+sh tools/get_emu.sh             # one-time: fetch the fm1-emu binary
+python3 tools/emu_test.py       # boots dist/*.fwsc, injects daemon frames,
+                                # walks the pages, snapshots the LCD
 ```
 
 With a real FM-1 flashed with Agent Deck and plugged in over USB:
@@ -294,6 +346,11 @@ cc -O2 -Wall -Wno-unused-function -DDINGHY_HOST -DAPP_VER="\"dev\"" \
    -Ifirmware/hal -Ifirmware/src -Ifirmware/gen \
    -o build/host/agentdeck firmware/src/dinghy.c
 build/host/agentdeck build/host/agentdeck tests/agentdeck.txt
+
+# on-device test (the packaged .fwsc on the emulated chip, via fm1-emu):
+# run this on the package you actually ship, after every release build
+sh tools/get_emu.sh                          # one-time
+python3 tools/emu_test.py                    # -> build/emu-test/*.png
 ```
 
 Verified 2026-11-08: the device build passes all of Dinghy's checks
@@ -304,6 +361,17 @@ output is in `firmware/host-test.log` with the screenshot at
 harness stubs `fm1_input_note_edges()` to 0, so the firmware diffs
 `fm1_in.notes` levels like Dinghy's own app does — identical behaviour
 on real hardware.
+
+Verified 2026-11-09: the same packaged `.fwsc` boots in **fm1-emu**
+(0.4.0) on the emulated AC791N and runs a full scripted session to
+completion with no CPU halt — accepting the daemon's frame stream
+injected through the MIDI IN jack and rendering all three pages; the
+captures are in [`docs/`](#see-it-running--fm1-emu) and the session is
+reproducible with `tools/emu_test.py`. That makes fm1-emu the
+project's on-device test stand-in: the host harness above stays the
+fast inner loop for logic, but anything that touches boot, screen,
+panel or protocol is only "tested" once it has run as a package in
+fm1-emu.
 
 ## Arrival day (read this before plugging anything in)
 
@@ -329,6 +397,11 @@ that one line is the fix.
 
 **Sequence for the day the unit lands:**
 
+0. Already done for you: the exact package in `dist/` has been booted
+   and driven in fm1-emu (see [See it running](#see-it-running--fm1-emu)),
+   so what follows is confirming the real hardware behaves like the
+   emulated chip — repeat the `tools/emu_test.py` session by hand:
+   frames in, ALGORITHM through the pages, screens checked.
 1. Power it on stock first. Check the stock firmware version and enjoy
    the synth briefly — it's a good one.
 2. **Return to stock V15 before flashing anything custom.** Community
@@ -366,11 +439,21 @@ mid-write.
 
 ## Testing
 
+**Rule of the house: a test that needs a device runs in fm1-emu.**
+Dinghy's host harness compiles the app natively and stubs the hardware
+— fast, and right for logic — but it cannot catch a package that won't
+boot, a screen drawn wrong on the real LCD path, or a protocol break.
+fm1-emu runs the shipped `.fwsc` on the emulated chip, so the packaged
+firmware is what gets tested. On arrival day the same `emu_test.py`
+session (frames in, pages walked, screens checked) is the script whose
+steps get repeated on the real unit.
+
 | Test | Command | Covers |
 |---|---|---|
+| **fm1-emu device test** | `python3 tools/emu_test.py` (after `tools/get_emu.sh`) | the packaged `.fwsc` booting on the emulated AC791N, daemon frame stream in via MIDI IN, GRID/DETAIL/APPROVALS rendering, ALGORITHM page walk; LCD snapshots in `build/emu-test/` |
 | tmux end-to-end | `sh host/test_simulate.sh` | discovery, BLOCKED/WORKING/IDLE heuristics, approve landing in the pane (`host/simulate-test.log`) |
 | Herdr live run | `python3 host/agentdeck.py --backend herdr --simulate` against a running Herdr | native states, detail text, approve/deny/interrupt/prompt/start (`host/herdr-test.log` is a captured run) |
-| Firmware emulator | the `cc …` build in [Building](#building-the-firmware) | frame parsing, screen rendering, panel event output (`firmware/host-test.log`) |
+| Firmware host harness | the `cc …` build in [Building](#building-the-firmware) | frame parsing, screen rendering, panel event output (`firmware/host-test.log`) — fast inner loop; not a substitute for the fm1-emu run |
 
 ## v1 scope limits & roadmap
 
@@ -389,10 +472,12 @@ Limits, honestly:
   socket methods (see Troubleshooting).
 
 Roadmap ideas, in rough order: first-hardware validation and fixes →
-BLE MIDI transport → per-agent cost/token readouts on DETAIL (Herdr
-exposes token counters) → using `agent.send_keys` for named agents →
-more agent kinds in the tmux heuristics → a small menu-bar/status
-companion so the daemon can autostart.
+Firmware Hub listing (the Hub requires a package tested on real
+hardware; listing unlocks fm1-emu's one-click `?fw=` browser link from
+this README) → BLE MIDI transport → per-agent cost/token readouts on
+DETAIL (Herdr exposes token counters) → using `agent.send_keys` for
+named agents → more agent kinds in the tmux heuristics → a small
+menu-bar/status companion so the daemon can autostart.
 
 ## Files
 
@@ -405,8 +490,11 @@ companion so the daemon can autostart.
 | `host/herdr-test.log` | Live Herdr-backend simulate run (Herdr 0.9.5) |
 | `firmware/agentdeck.c` | The firmware app |
 | `firmware/host-test.log` | Emulator run of the exact shipped source |
-| `firmware/screen-grid.png` | The GRID page as rendered by the emulator |
-| `docs/fm1-agent-deck-hero.jpg` | Hero image: an FM-1 (White and Blue) with the emulator's GRID page composited into its screen |
+| `firmware/screen-grid.png` | The GRID page as rendered by the host harness |
+| `tools/emu_test.py` | fm1-emu device test: boots the packaged `.fwsc`, injects daemon frames, walks the pages, snapshots the LCD |
+| `tools/get_emu.sh` | Fetches the fm1-emu release binary into `tools/fm1-emu-bin/` |
+| `docs/emu-grid.png` · `docs/emu-detail.png` · `docs/emu-approvals.png` | The three pages as rendered by the packaged firmware in fm1-emu (`python3 tools/emu_test.py --out docs` regenerates them) |
+| `docs/fm1-agent-deck-hero.jpg` | Hero image: an FM-1 (White and Blue) with the packaged firmware's fm1-emu GRID page composited into its screen |
 | `firmware-build/` | Dinghy tree + Agent Deck identity; `./build.sh` here |
 | `dist/agentdeck-0.1.fwsc` | The built firmware package, ready to flash |
 
@@ -416,6 +504,10 @@ Agent Deck stands on a remarkable few months of FM-1 community work:
 
 - **[Dinghy](https://github.com/zvenson/dinghy)** by zvenson — the
   minimal firmware base: platform, build, installer, host emulator.
+- **[fm1-emu](https://github.com/joakimeriksson/fm1-emu)** by Joakim
+  Eriksson — the chip-level FM-1 emulator this project tests its
+  packaged firmware in, and the reason you can run the deck in a
+  browser before any hardware exists.
 - **Felucca** by Leo Kuroshita (Hügelton Instruments) and the **SLOOP**
   port — the platform layer Dinghy carries.
 - **HYP-1** — the remote-mode precedent for the panel's MIDI mapping.

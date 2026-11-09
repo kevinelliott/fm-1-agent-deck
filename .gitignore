@@ -3,3 +3,6 @@ vendor-dinghy/
 __pycache__/
 *.pyc
 .DS_Store
+# fm1-emu release binaries (fetched by tools/get_emu.sh) and emu test output
+tools/fm1-emu-bin/
+build/
