@@ -4,7 +4,52 @@ Custom firmware for the **M-VAVE FM-1** that turns the little FM synth into a
 hardware desk controller for CLI coding agents (Claude Code, Codex, …)
 running on your computer.
 
-![The Agent Deck GRID page, rendered by the firmware emulator](firmware/screen-grid.png)
+![An FM-1 in White and Blue running Agent Deck — the screen shows the firmware's GRID page: CLAUDE-1 working, CODEX-2 blocked](docs/fm1-agent-deck-hero.jpg)
+
+*What that picture is: a visualization of the FM-1 (White and Blue colorway)
+running Agent Deck. The screen content is not a mockup — it is the firmware's
+real GRID page, rendered by the host emulator
+([`firmware/screen-grid.png`](firmware/screen-grid.png)) and composited into
+the display. Real hardware photos will replace this render once the first
+unit is flashed.*
+
+## Why an FM synth?
+
+First, appreciate the FM-1 for what it actually is: a genuinely delightful
+piece of music gear. For roughly the price of a nice dinner it packs a full
+**6-operator FM synthesizer** (32 algorithms, DX-style sounds), a 16-step
+sequencer, an arpeggiator, effects, a built-in speaker and a rechargeable
+battery into a pocketable box that comes in a stack of cheerful colorways.
+It's an instrument you can throw in a bag and play anywhere.
+
+Now look at it with a developer's eyes, and it stops reading as a synth and
+starts reading as the control surface the industry forgot to build:
+
+- a **240×240 color screen** — meant for waveforms and preset browsers
+- **27 backlit keys** — a piano keyboard, or 27 status lights with buttons
+  attached
+- **14 more LED buttons**, labelled like a transport: PLAY, REC, SAVE, HOME,
+  EDIT…
+- **7 endless encoders plus a master pot** — for tweaking FM operators, or
+  for scrolling through agents
+- **USB-C (MIDI + audio), Bluetooth MIDI and TRS MIDI** — it already speaks
+  fluent computer
+- and an active custom-firmware community that has made the box hackable
+
+Every one of those music features maps one-to-one onto the job of wrangling
+coding agents. The keys become agent slots, their LEDs become agent states.
+The transport buttons become *start*, *approve*, *deny* and *interrupt*. The
+screen that was browsing piano presets now shows which agents are working,
+which are idle — and which one is **blocked, waiting on you**, blinking until
+you deal with it. Even the mindset carries over: running a fleet of agents
+*is* a performance — a row of voices, each needing a cue at the right moment.
+
+So Agent Deck takes a music product and re-casts it in the developer world.
+The synth engine steps aside (this firmware is a pure controller, and
+flashing back to stock brings the instrument right back) and the FM-1 gets a
+second life on the desk next to your keyboard: not making sound, but giving
+your agents a physical presence you can see and touch without switching
+windows.
 
 Your agents get physical presence: their states live on the FM-1's key LEDs
 and its 240×240 screen, and the agents that are **blocked waiting on you**
@@ -361,6 +406,7 @@ companion so the daemon can autostart.
 | `firmware/agentdeck.c` | The firmware app |
 | `firmware/host-test.log` | Emulator run of the exact shipped source |
 | `firmware/screen-grid.png` | The GRID page as rendered by the emulator |
+| `docs/fm1-agent-deck-hero.jpg` | Hero image: an FM-1 (White and Blue) with the emulator's GRID page composited into its screen |
 | `firmware-build/` | Dinghy tree + Agent Deck identity; `./build.sh` here |
 | `dist/agentdeck-0.1.fwsc` | The built firmware package, ready to flash |
 
