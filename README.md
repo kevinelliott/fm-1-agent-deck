@@ -4,6 +4,17 @@ Custom firmware for the **M-VAVE FM-1** that turns the little FM synth into a
 hardware desk controller for CLI coding agents (Claude Code, Codex, …)
 running on your computer.
 
+[![Agent Deck playing in fm1-emu: the GRID, DETAIL and APPROVALS pages of the real firmware, cycling](docs/emu-demo.gif)](https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt)
+
+▶ **[Play Agent Deck live in your browser](https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt)**
+— the shipped firmware package, running in **fm1-emu** on this project's
+own player page. It starts by itself and plays a scripted session:
+daemon frames in, pages walked, the blocked agent selected. (GitHub
+READMEs can't run iframes, so the live embed lives on the project
+site; the animation above is that same session, captured from
+fm1-emu. Device-only view for embedding elsewhere:
+[embed link](https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt&embed=1).)
+
 ![An FM-1 in White and Blue running Agent Deck — the screen shows the firmware's GRID page: CLAUDE-1 working, CODEX-2 blocked](docs/fm1-agent-deck-hero.jpg)
 
 *What that picture is: a visualization of the FM-1 (White and Blue colorway)
@@ -94,15 +105,32 @@ turned to walk the pages — captured by
 |---|---|---|
 | ![GRID page in fm1-emu: two agents, CLAUDE-1 working, CODEX-2 blocked, HOST OK](docs/emu-grid.png) | ![DETAIL page in fm1-emu: CLAUDE-1 working, its latest output lines](docs/emu-detail.png) | ![APPROVALS page in fm1-emu: CODEX-2 blocked, waiting on you](docs/emu-approvals.png) |
 
-**Run it yourself, in the browser:** fm1-emu also runs as a web page —
-**[joakimeriksson.github.io/fm1-emu](https://joakimeriksson.github.io/fm1-emu/)**.
-Download [`dist/agentdeck-0.1.fwsc`](dist/agentdeck-0.1.fwsc), choose
-**Open .fwsc…** on that page, pick the file, and press **Start**: the
-whole FM-1 panel appears, clickable and playable from your keyboard.
-Agent Deck boots to `NO HOST` (it is a controller — it wants its daemon);
-turn the ALGORITHM knob to flip through the pages. The emulator page
-also supports an embed mode (`&embed=1` shows just the device), which is
-how firmware sites window it into their own pages.
+**Run it yourself, in the browser:** this project hosts its own
+fm1-emu player (a vendored copy of the emulator whose only firmware
+is Agent Deck — see [`docs/play/`](docs/play/README.md)):
+**[kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt](https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt)**.
+It starts by itself and plays the same scripted session as the
+captures above; afterwards the panel is yours — click the keys, turn
+the ALGORITHM knob, open the picker. A plain visit (no `script=`)
+boots the deck to `NO HOST`: it is a controller, and it wants its
+daemon.
+
+**Embed it on a site:** the player supports fm1-emu's embed mode —
+this iframe windows just the device, auto-playing the demo:
+
+```html
+<iframe src="https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt&embed=1"
+        width="480" height="640" style="border:0"
+        title="Agent Deck running in fm1-emu"></iframe>
+```
+
+(Adjust the size to taste. This is also why the animation at the top
+of this README exists: GitHub renders no iframes in READMEs, so the
+top of the page carries the captured session and one click to the
+live one.) You can also run the deck on the upstream
+[fm1-emu page](https://joakimeriksson.github.io/fm1-emu/): download
+[`dist/agentdeck-0.1.fwsc`](dist/agentdeck-0.1.fwsc), choose
+**Open .fwsc…** there, and press **Start**.
 
 **Run it natively:** `tools/get_emu.sh` fetches the fm1-emu release
 binary, and `fm1-live` (included) opens the emulated FM-1 in a window —
@@ -111,11 +139,12 @@ screen, panel, audio, and every MIDI input of your computer.
 One honest limit: in the emulator the deck has no live daemon behind it,
 so what you see is the panel, the pages and the protocol working against
 canned frames — for the full loop, pair the daemon with tmux/Herdr in
-`--simulate` mode (below), or wait for hardware like the rest of us. A
-one-click `?fw=` deep link from this README becomes possible once Agent
-Deck is listed on the [FM-1 Firmware Hub](https://thefirmwarehub.com/)
-— the Hub only lists firmwares already tested on real hardware, so that
-waits until after arrival day.
+`--simulate` mode (below), or wait for hardware like the rest of us. The
+player above is self-hosted because the upstream fm1-emu page only
+deep-links (`?fw=`) firmwares in its own catalog; a listing on the
+[FM-1 Firmware Hub](https://thefirmwarehub.com/) would put Agent Deck
+in that catalog too, but the Hub only lists firmwares already tested
+on real hardware — so that waits until after arrival day.
 
 ---
 
@@ -494,6 +523,8 @@ menu-bar/status companion so the daemon can autostart.
 | `tools/emu_test.py` | fm1-emu device test: boots the packaged `.fwsc`, injects daemon frames, walks the pages, snapshots the LCD |
 | `tools/get_emu.sh` | Fetches the fm1-emu release binary into `tools/fm1-emu-bin/` |
 | `docs/emu-grid.png` · `docs/emu-detail.png` · `docs/emu-approvals.png` | The three pages as rendered by the packaged firmware in fm1-emu (`python3 tools/emu_test.py --out docs` regenerates them) |
+| `docs/emu-demo.gif` | The emu session as an animation (GRID → DETAIL → APPROVALS), at the top of this README |
+| `docs/play/` | The self-hosted live player: vendored fm1-emu (MIT) + Agent Deck catalog + the auto-play demo script, served by GitHub Pages |
 | `docs/fm1-agent-deck-hero.jpg` | Hero image: an FM-1 (White and Blue) with the packaged firmware's fm1-emu GRID page composited into its screen |
 | `firmware-build/` | Dinghy tree + Agent Deck identity; `./build.sh` here |
 | `dist/agentdeck-0.1.fwsc` | The built firmware package, ready to flash |
