@@ -48,7 +48,7 @@ sleep 60
 EOF
 # The daemon's BLOCKED heuristic looks for the real prompt's selection glyph;
 # the fixture prints it if the terminal handles UTF-8 (tmux panes do).
-sed -i 's/" > 1\. Yes"/" ❯ 1. Yes"/' "$TMP/approve.sh"
+sed -i.bak 's/" > 1\. Yes"/" ❯ 1. Yes"/' "$TMP/approve.sh"   # (-i.bak: GNU and BSD sed)
 chmod +x "$TMP/approve.sh"
 
 cat > "$TMP/spin.sh" <<'EOF'

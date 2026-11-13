@@ -1,0 +1,14 @@
+{
+  "presets": [
+    "continue",
+    {"label": "run tests + fix", "text": "Run the test suite and fix any failures."},
+    {"label": "summarize", "text": "Summarize what you have done so far and what is left."},
+    {"label": "commit", "text": "Commit your work with a clear commit message."},
+    "/compact"
+  ],
+  "default_agent": "claude",
+  "agents": {"claude": "claude", "codex": "codex"},
+  "spawn_cwd": null,
+  "sounds": true,
+  "focus_on_edit": true
+}
