@@ -75,8 +75,8 @@ and let the deck chime when someone needs you.
 > (protocol v3) is installed on the author's FM-1 — flashed over USB with
 > the installer in this repo, as 0.1 and 0.2 were before it — and driven
 > there by the daemon against a live Herdr session. The newest package,
-> **0.4** (`dist/agentdeck-0.4.fwsc`, protocol v4), adds two LED cues and
-> a row marker on top of that. Every release is first built with the JieLi
+> **0.5** (`dist/agentdeck-0.5.fwsc`, protocol v5), adds LED cues, row
+> markers, context gauges and a wider set of sounds on top of that. Every release is first built with the JieLi
 > toolchain and booted in [fm1-emu](https://github.com/joakimeriksson/fm1-emu),
 > the chip-level FM-1 emulator (see [See it running](#see-it-running--fm1-emu)).
 > Still young: individual features have had far more emulator and
@@ -99,7 +99,7 @@ Joakim Eriksson's emulator for the FM-1: it emulates the JieLi AC791N
 chip itself (both CPU cores, screen, keys, encoders, MIDI), so firmware
 packages run in it *unchanged* — the same `.fwsc` you would flash.
 
-These are not mockups. They are the LCD of `dist/agentdeck-0.4.fwsc`
+These are not mockups. They are the LCD of `dist/agentdeck-0.5.fwsc`
 booted in fm1-emu, fed the exact frame stream the real daemon sends
 (injected through the FM-1's MIDI IN jack, which the firmware's platform
 merges into the same queue as USB MIDI), with the ALGORITHM encoder
@@ -267,17 +267,17 @@ Actions are executed by the host daemon against the *selected* agent:
 | **ENV** | interrupt (Ctrl-C) |
 | **SEL** | Enter |
 | **K2** / **K3** encoders | Up·Down / Left·Right arrow keys — with SEL, enough to answer any menu an agent shows |
-| **LFO** | cycle the agent's mode (Shift+Tab) |
+| **LFO** | cycle the agent's mode (Shift+Tab). Lit while the selected agent is marked (firmware 0.4) |
 | **PRESETS** encoder | arm a prompt preset (shown on the footer line) |
 | **SEQ** | send the armed preset as a prompt |
 | **ARP** | toggle auto-approve for this agent (row shows `A`, ARP lights); the daemon then approves its prompts as they appear. Off by default, forgotten when the daemon restarts |
-| **K1** encoder | scroll DETAIL back through the agent's output |
+| **K1** encoder | scroll DETAIL back through the agent's output; on the MENU page, move a page at a time |
 | **K4** encoder | jump to the next agent that needs you (BLOCKED, then ERROR, then DONE) |
-| **EDIT** | DETAIL page — and focus that pane on the computer. Pressed again on DETAIL: flip between **OUTPUT** and **INFO** (below) |
-| **HOME** / **GLO** | GRID page / APPROVALS page |
+| **EDIT** | DETAIL page — and focus that pane on the computer. Pressed again on DETAIL: cycle **OUTPUT**, **INFO** and **DIFF** (below) |
+| **HOME** / **GLO** | GRID page / APPROVALS page. HOME pressed again on the GRID jumps to the agent that has waited longest (the oldest BLOCKED, else an ERROR, else a DONE) |
 | **ALGORITHM** encoder | cycle GRID → DETAIL → APPROVALS → MENU |
 | **OCT− / OCT+** | previous / next slot page (54 slots total) |
-| **GLO held +** REC / FX / ENV / SEQ / ARP | the same for *every* agent it applies to: approve or deny all BLOCKED, interrupt all WORKING, send the preset to all IDLE/DONE, auto-approve off everywhere |
+| **GLO held +** REC / FX / ENV / SEQ / ARP | the same for *every* agent it applies to: approve or deny all BLOCKED, interrupt all WORKING, send the preset to all IDLE/DONE, auto-approve off everywhere. **While any agents are marked, the same buttons act on the marked ones only**, and GLO + LFO clears the marks |
 | **MASTER** | chime volume |
 
 **Chords** (firmware 0.3) — hold a button and tap keys; the cursor stays
@@ -290,9 +290,11 @@ a tap would hit:
 | **FX + key** | deny that agent |
 | **ENV + key** | interrupt that agent (working ones blink) |
 | **SEQ + key N** | send prompt preset N to the selected agent |
-| **SEL + key N** | answer option N — types the digit 1–9 |
+| **SEL + key N** | answer option N — types the digit 1–9. When the prompt on screen has numbered choices, exactly those keys light (the "don't ask again" one blinks) and the footer names the one you picked |
 | **PLAY + key** | start / continue that agent; on an empty key, spawn one there |
 | **SAVE + key** | move the selected agent to that key (a swap if it is taken) |
+| **LFO + key** | **mark / unmark** that agent (marked keys light). Marks make a group: GLO + REC / FX / ENV / SEQ then acts on just those agents. The row shows `+` (firmware 0.5) |
+| **ARP + key** | toggle auto-approve on that agent (keys on auto light) |
 | **SEQ held ~1 s** | **repeat mode**: send the armed prompt to this agent every time it finishes a turn, up to `repeat_max` times. The row shows `R` and SEQ stays lit; hold SEQ again to stop |
 
 A chord button tapped on its own still does its normal thing (on release).
@@ -302,12 +304,13 @@ daemon: SELECT moves, SEL picks, FX backs out.
 
 | Entry | What it does |
 |---|---|
-| THIS AGENT | output/info view, repeat mode, auto-approve, focus on the computer, copy its last reply to the clipboard, open its folder |
-| NEW AGENT | pick an installed agent CLI and a directory (the current agents' directories plus `projects` from the config) and start it |
-| SEND PROMPT | the preset list; pick one to send to the selected agent |
+| THIS AGENT | view, repeat mode, auto-approve, mark, **COMMANDS** (`/compact`, `/clear`, `/context`… from `commands`), focus on the computer, copy its last reply to the clipboard, open its folder |
+| FLEET | every agent on one screen — state, time in state, context size — with the counts in the title; pick a row to open that agent's DETAIL. Also MARK ALL / CLEAR MARKS |
+| NEW AGENT | pick an installed agent CLI and a directory (the current agents' directories plus `projects` from the config) and start it. `IN A NEW WORKTREE: YES` first makes a git worktree next to the repository (`<repo>-wt1` on branch `deck/wt1`, and so on) and starts the agent there |
+| SEND PROMPT | `AGAIN:` what the agent was last asked (Claude Code), then the preset list; pick one to send to the selected agent |
 | EVENT LOG | who got blocked, finished, was approved or closed, and how long ago |
 | CLOSE AGENT | close the selected agent's pane, after a yes/no |
-| SETTINGS | sounds, nag while blocked (chime again every 2 / 5 / 10 min), focus-on-EDIT, auto-approve off everywhere, resync the device |
+| SETTINGS | sounds, feedback sounds, how loud the BLOCKED alert is, nag while blocked (alert again every 2 / 5 / 10 min), desktop notifications, focus-on-EDIT, auto-approve off everywhere, resync the device |
 | HELP | the control list above, on the device |
 
 **The INFO view** of DETAIL (firmware 0.3+) answers "what is this one
@@ -325,6 +328,20 @@ TODO 3/7: Updating the mocks
 SAID: The failure is in...
 ```
 
+A blocked agent's numbered choices are listed too (`SEL+2: Yes, and
+don't ask again`), and `CONTEXT 71% FULL` once the size is known.
+
+**The DIFF view** is the third stop of EDIT: what the agent has changed
+in its repository since the last commit — `8 FILES +864 -417`, then a
+line per file, largest first, untracked files, and the last three
+commits. K1 scrolls it.
+
+**Context gauges** (firmware 0.5): each Claude Code agent's row ends in a
+small bar that fills as its context does (blue, amber from 60%, red from
+85%), and DETAIL draws it under the status line. Once an agent crosses
+`ctx_warn_pct` the deck says so once (`api CONTEXT 82%`) — time for
+MENU → THIS AGENT → COMMANDS → `/compact`.
+
 The same log names the reason when an agent blocks, so the footer says
 `api: Bash npm test` instead of just `api NEEDS YOU`. Other agent kinds
 get the git line only. SAVE blinks when the prompt on screen offers a
@@ -336,13 +353,29 @@ Slots are remembered across daemon restarts
 The bottom line of every page is the **footer**: the armed prompt preset
 (`P2/8 run tests + fix`), or for a few seconds the result of what you just
 did (`APPROVED api-server`) or an agent calling for you (`docs NEEDS YOU`).
-The deck also **chimes** through the FM-1's own output when an agent
-becomes BLOCKED, finishes, or errors (`"sounds": false` turns that off).
+The deck also makes **sounds** through the FM-1's own output, at the
+MASTER volume (`"sounds": false` turns them all off):
+
+| Sound | When |
+|---|---|
+| the **alert** — three rising calls, three times, about twice as loud as anything else | an agent becomes BLOCKED (and each nag). `"alert": "normal"` swaps it for the short two-call chime |
+| a soft C-E-G | an agent finished |
+| two low notes | an agent errored |
+| a quiet double note | an agent's context is getting full |
+| a soft rising / falling blip | you approved, started or sent something / denied or stopped something |
+| a faint tick | a menu move or pick, a preset armed, a mark, a view change |
+
+The last two rows are the feedback sounds (`"ui_sounds": false` silences
+just those). The alert, the feedback sounds and the per-sound loudness
+need **firmware 0.5**; on older firmware a BLOCKED agent gets the
+attention chime three times in a row instead, and the feedback sounds
+stay silent.
 Each GRID row shows how long the agent has been in its state.
 
 The footer, chimes, K1/K4 and the auto-approve marker need **firmware
 0.2**, the chords, the MENU page and the INFO toggle **0.3**, the `R`
-marker and the lit SEQ / blinking SAVE **0.4**; an older unit gets every
+marker and the lit SEQ / LFO / blinking SAVE **0.4**, the `+` marker,
+the context gauges and the new sounds **0.5**; an older unit gets every
 other control above (chord buttons then act at once, on press).
 
 The four screen pages: **GRID** (every agent as a labelled strip with its
@@ -391,7 +424,13 @@ keeps its default.
 | `repeat_max` | `10` | repeat mode stops by itself after this many sends |
 | `nag_minutes` | `0` | chime again every N minutes while an agent stays BLOCKED (0 = off) |
 | `open_cmd` | `open` (macOS) / `xdg-open` | what MENU → THIS AGENT → OPEN FOLDER runs |
-| `sounds` | `true` | chimes on BLOCKED / DONE / ERROR |
+| `commands` | `/compact`, `/clear`, `/context`, `/review`, `/status` | what MENU → THIS AGENT → COMMANDS offers; typed at the agent as they are |
+| `ctx_window` | `200000` | tokens that count as a full context for the gauge (a session seen above this is taken to have a 1M window) |
+| `ctx_warn_pct` | `80` | warn once when an agent's context passes this percentage (0 = never) |
+| `notify` | `false` | also post a desktop notification when an agent blocks, finishes or errors |
+| `sounds` | `true` | all sounds |
+| `ui_sounds` | `true` | the quiet feedback sounds (firmware 0.5) |
+| `alert` | `"loud"` | how a BLOCKED agent announces itself: `"loud"` or `"normal"` |
 | `focus_on_edit` | `true` | EDIT also focuses the pane on the computer |
 
 A backend that dies or errors is reported once and retried every poll;
@@ -470,7 +509,7 @@ git clone --depth 1 --branch AC79NN_SDK_V1.2.1_2023-12-13 \
     https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git ~/fw-AC79_AIoT_SDK
 pip install mido python-rtmidi Pillow
 
-./build.sh --release 0.4                     # -> build/agentdeck-0.4.fwsc
+./build.sh --release 0.5                     # -> build/agentdeck-0.5.fwsc
 
 # host emulator test (no device, no toolchain): tests/agentdeck.txt
 # (generated by tools/gen_host_test.py; on macOS add '-Dsection(x)=' to cc)
@@ -542,7 +581,7 @@ that one line is the fix.
    use M-VAVE's M-UPGRADE updater (or a browser installer's
    "Return to official V15" option) if it shipped with V16.
 3. Flash Agent Deck over USB, using the package in `dist/`:
-   `python3 firmware-build/tools/fm1_install.py dist/agentdeck-0.4.fwsc`
+   `python3 firmware-build/tools/fm1_install.py dist/agentdeck-0.5.fwsc`
    (or the FM-1 Firmware Hub in Chrome/Edge). The installer asks before
    it writes; the FM-1 restarts into Agent Deck.
 4. Start the daemon (`--backend auto`), watch the FM-1 screen switch
@@ -618,7 +657,7 @@ menu-bar/status companion so the daemon can autostart.
 
 | Path | What |
 |---|---|
-| `PROTOCOL.md` | The wire spec (v4) |
+| `PROTOCOL.md` | The wire spec (v5) |
 | `host/agentdeck.py` | The daemon: Herdr + tmux backends, MIDI + simulate modes |
 | `host/test_simulate.sh` | End-to-end simulate test against real tmux panes |
 | `host/simulate-test.log` | Latest tmux test run — ALL PASS |
@@ -633,7 +672,7 @@ menu-bar/status companion so the daemon can autostart.
 | `docs/play/` | The self-hosted live player: vendored fm1-emu (MIT) + Agent Deck catalog + the auto-play demo script, served by GitHub Pages |
 | `docs/fm1-agent-deck-hero.jpg` | Hero image: an FM-1 (White and Blue) with the packaged firmware's fm1-emu GRID page composited into its screen |
 | `firmware-build/` | Dinghy tree + Agent Deck identity; `./build.sh` here |
-| `dist/agentdeck-0.4.fwsc` | The built firmware package, ready to flash (`-0.3` … `-0.1`: earlier releases; the web player still runs 0.1) |
+| `dist/agentdeck-0.5.fwsc` | The built firmware package, ready to flash (`-0.4` … `-0.1`: earlier releases; the web player still runs 0.1) |
 | `host/config.example.json` | Example daemon config (prompt presets, default agent) |
 | `tools/gen_host_test.py` | Generates the host-harness session `firmware-build/tests/agentdeck.txt` |
 
