@@ -5,7 +5,7 @@
  * LICENSING.md in the Dinghy tree). The synth engine is gone; the only
  * sound left is a handful of alert chimes the host asks for. The panel
  * talks to a host daemon (host/agentdeck.py) over USB-MIDI channel 16; the
- * wire format is PROTOCOL.md in this project (this is protocol v3). In short:
+ * wire format is PROTOCOL.md in this project (this is protocol v4). In short:
  *
  *   out: keys = Note On/Off 48..74 (a press also selects the slot),
  *        buttons = CC 102..115, encoders = CC 85..91 (relative),
@@ -17,7 +17,7 @@
  *        0x20 end, 0x7F reset), CC 119 = one payload byte. SysEx never
  *        reaches an app in this platform (the updater owns it), hence CCs.
  *        Frames: SLOT, DETAIL, META, FOOTER, BEEP, SELECT, TEXT, PAGE,
- *        KEYLEDS, HELLO_ACK.
+ *        KEYLEDS, BTNLEDS, HELLO_ACK.
  *
  * The device is deliberately dumb: the host owns everything that needs
  * judgement (what a knob does to an agent, which prompt is armed, when to
@@ -100,7 +100,7 @@ static void app_audio(int32_t *out, uint32_t n)
 }
 
 /* ---- protocol (PROTOCOL.md) */
-#define PROTO_VER 3u
+#define PROTO_VER 4u
 #define CH16 0x0Fu                              /* channel 16, as a status low nibble */
 #define ST_NOTEON 0x9Fu
 #define ST_NOTEOFF 0x8Fu
@@ -122,8 +122,10 @@ static void app_audio(int32_t *out, uint32_t n)
 #define FT_TEXT 0x07u
 #define FT_PAGE 0x08u
 #define FT_KEYLEDS 0x09u
+#define FT_BTNLEDS 0x0Au
 #define FT_HELLO_ACK 0x0Fu
 #define KIND_AUTO 0x40u                         /* SLOT's kind byte: the host auto-approves this agent */
+#define KIND_LOOP 0x20u                         /* ... and: the host repeats a prompt at it */
 
 #define MAXSLOTS 54u                            /* two key-pages of 27 */
 #define NAME_CHARS 12u
@@ -145,6 +147,7 @@ enum { S_EMPTY, S_IDLE, S_WORKING, S_BLOCKED, S_DONE, S_ERROR, S_UNKNOWN };
 static uint8_t slot_state[MAXSLOTS];
 static uint8_t slot_kind[MAXSLOTS];
 static uint8_t slot_auto[MAXSLOTS];
+static uint8_t slot_loop[MAXSLOTS];
 static char slot_name[MAXSLOTS][NAME_CHARS + 1u];
 static uint32_t slot_since[MAXSLOTS];           /* fm1_ms when the state last changed */
 static char detail[DETAIL_LINES][DETAIL_CHARS + 1u];
@@ -153,6 +156,7 @@ static uint8_t footer_style;
 static char menu_text[MENU_LINES][DETAIL_CHARS + 1u];
 static uint8_t menu_style[MENU_LINES];
 static uint8_t kled[27], kled_on;                /* the host's key LEDs, shown while a button is held */
+static uint8_t bled[14];                         /* the host's button LEDs: 0 ours, 1 off, 2 on, 3 blink, 4 glow */
 static uint8_t announce_page;
 static uint8_t meta_agents, meta_blocked, host_seen, announce_sel;
 static uint32_t host_t;                         /* fm1_ms of the host's last frame */
@@ -173,10 +177,12 @@ static void slots_clear(void)
         slot_state[i] = S_EMPTY;
         slot_kind[i] = 0;
         slot_auto[i] = 0;
+        slot_loop[i] = 0;
         for (j = 0; j <= NAME_CHARS; j++) slot_name[i][j] = 0;
     }
     for (i = 0; i < DETAIL_LINES; i++) detail[i][0] = 0;
     for (i = 0; i < MENU_LINES; i++) menu_text[i][0] = 0;
+    for (i = 0; i < 14u; i++) bled[i] = 0;
     kled_on = 0;
     footer[0] = 0;
     meta_agents = 0;
@@ -203,10 +209,11 @@ static void rx_commit(void)
         uint32_t s = rx_buf[0];
         if (s < MAXSLOTS) {
             uint8_t st = rx_buf[1] <= S_UNKNOWN ? rx_buf[1] : S_UNKNOWN;
-            uint8_t kind = rx_buf[2] & 0x3Fu;
+            uint8_t kind = rx_buf[2] & 0x1Fu;
             if (st != slot_state[s]) slot_since[s] = fm1_ms;
             slot_state[s] = st;
             slot_auto[s] = (rx_buf[2] & KIND_AUTO) != 0u;
+            slot_loop[s] = (rx_buf[2] & KIND_LOOP) != 0u;
             slot_kind[s] = kind <= 6u ? kind : 0u;
             rx_text(slot_name[s], NAME_CHARS, 3u);
         }
@@ -242,6 +249,9 @@ static void rx_commit(void)
         uint32_t i;
         kled_on = rx_len != 0u;                 /* an empty frame gives the keys back */
         for (i = 0; i < 27u; i++) kled[i] = i < rx_len ? rx_buf[i] : 0u;
+    } else if (rx_type == FT_BTNLEDS) {
+        uint32_t i;
+        for (i = 0; i < 14u; i++) bled[i] = i < rx_len ? rx_buf[i] : 0u;
     } else if (rx_type == FT_HELLO_ACK) {
         announce_sel = 1;                       /* a host arrived: tell it where the cursor is */
         announce_page = 1;
@@ -350,6 +360,7 @@ static void draw_row(int32_t y, uint32_t slot, int32_t selected)
         p = put_age(p, slot);
         *p++ = ' ';
         *p++ = slot_auto[slot] ? 'A' : ' ';
+        *p++ = slot_loop[slot] ? 'R' : ' ';
     }
     *p = 0;
     cv_text(4, y, &FONT_S, s, selected ? C_WHITE : state_colour(slot_state[slot]));
@@ -385,7 +396,8 @@ static void draw_content(void)
         if (slot_state[sel_slot] != S_EMPTY) {
             p = put_str_r(p, "  ");
             p = put_age(p, sel_slot);
-            if (slot_auto[sel_slot]) p = put_str_r(p, "  AUTO");
+            if (slot_auto[sel_slot]) p = put_str_r(p, " AUTO");
+            if (slot_loop[sel_slot]) p = put_str_r(p, " LOOP");
         }
         *p = 0;
         cv_text(4, 18, &FONT_S, s, state_colour(slot_state[sel_slot]));
@@ -442,6 +454,11 @@ static void leds(void)
     fm1_led_key(BTN_HOME, page == PAGE_GRID);
     fm1_led_key(BTN_EDIT, page == PAGE_DETAIL);
     fm1_led_key(BTN_GLO, page == PAGE_APPROVALS);
+    for (k = 0; k < 14u; k++) {                 /* the buttons the host has taken */
+        if (!bled[k]) { fm1_led_key_glow(k, 0); continue; }
+        fm1_led_key(k, bled[k] == 2u || (bled[k] == 3u && ((now / 250u) & 1u)));
+        fm1_led_key_glow(k, bled[k] == 4u);
+    }
 }
 
 /* ---- the page */
