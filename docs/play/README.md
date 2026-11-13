@@ -10,8 +10,9 @@ Pages so the README can link a deck that actually runs.
   one Start click (browsers gate sound behind a click; the deck is
   silent, but the emulator's audio thread is what starts): the
   daemon's frame stream goes in through the MIDI IN jack at ~2 s,
-  the ALGORITHM encoder walks GRID → DETAIL → APPROVALS, and a key
-  press selects the blocked agent.
+  HOME flips the GRID to boxes and back, the ALGORITHM encoder walks
+  DETAIL → APPROVALS → MENU → ABOUT → GRID, and a key press selects
+  the blocked agent. `python3 tools/emu_shots.py --player` writes it.
 - **Embed (device only):** add `&embed=1` — just the FM-1 and its
   controls, for iframing into another site.
 
@@ -39,6 +40,6 @@ Local changes versus upstream, deliberately minimal:
 To refresh the player: download the same file list from the upstream
 site again, re-apply the two changes above, and re-check the demo.
 
-`agentdeck-0.1.fwsc` is a copy of `../../dist/agentdeck-0.1.fwsc` —
+`agentdeck-0.6.2.fwsc` is a copy of `../../dist/agentdeck-0.6.2.fwsc` —
 refresh it when the firmware version changes (and update
 `firmwares.json`'s version field to match).

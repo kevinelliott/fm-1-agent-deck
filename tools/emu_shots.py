@@ -79,7 +79,7 @@ class Scene:
     def hello(self):
         self.cc(CC_CTRL, 0x7F)                               # RESET
         self.frame(HELLO_ACK, [6])
-        self.text(TEXT, [8, 0], "0.6.2 via herdr")             # ABOUT's lines
+        self.text(TEXT, [8, 0], "0.6.3 via herdr")             # ABOUT's lines
         self.text(TEXT, [9, 0], "macOS, python 3.12")
         self.footer(0, "P2/9 run tests + fix")
 
@@ -295,6 +295,39 @@ def run_scene(emu, fwsc, name, out):
         return ok
 
 
+def player_script():
+    """docs/play/demo.txt: the session the web player plays by itself.
+
+    The same frames as the scenes above, in the web player's syntax
+    (`ms:mHEX` MIDI in, `ms:eN:clicks` an encoder, `ms:id` / `ms:id^` a
+    button or key down / up; e1 is ALGORITHM, 8 is HOME, 15 the second key).
+    """
+    s = Scene()
+    s.hello()
+    s.fleet()
+    s.frame(SELECT, [1])
+    s.detail(["Bash command", "  npm test -- --watch=false",
+              "Do you want to proceed?", "> 1. Yes",
+              "  2. Yes, and don't ask again",
+              "  3. No, tell Claude what to do"])
+    s.menu("MENU - web-frontend",
+           ["THIS AGENT", "FLEET", "NEW AGENT", "SEND PROMPT", "EVENT LOG",
+            "CLOSE AGENT", "SETTINGS"])
+    s.footer(3, "web-fronte: Bash npm test")
+    items = ["%s:m%s" % (i.split(":")[0], i.split(":")[2].upper())
+             for i in s.items]
+    t = max(s.t + 2500, 6000)
+    items += ["%d:8" % t, "%d:8^" % (t + 150)]              # HOME: the boxes
+    t += 3500
+    items += ["%d:8" % t, "%d:8^" % (t + 150)]              # and the list
+    for _ in range(5):          # DETAIL, APPROVALS, MENU, ABOUT, the GRID
+        t += 3000
+        items.append("%d:e1:1" % t)
+    t += 2500
+    items += ["%d:15" % t, "%d:15^" % (t + 150)]            # the second key
+    return ",".join(items) + "\n"
+
+
 def make_intro(out):
     """docs/intro.gif: the shots playing in the hero picture's display."""
     from PIL import Image
@@ -337,9 +370,17 @@ def main():
     ap.add_argument("--fwsc", default=emu_test.newest_fwsc())
     ap.add_argument("--out", default=os.path.join(ROOT, "docs"))
     ap.add_argument("--emu", default=None)
+    ap.add_argument("--player", action="store_true",
+                    help="write docs/play/demo.txt, the web player's session")
     ap.add_argument("--intro-only", action="store_true",
                     help="rebuild intro.gif from the shots already in --out")
     args = ap.parse_args()
+    if args.player:
+        path = os.path.join(ROOT, "docs", "play", "demo.txt")
+        with open(path, "w") as f:
+            f.write(player_script())
+        print("player script: %s" % os.path.relpath(path, ROOT))
+        return 0
     if args.intro_only:
         gif = make_intro(args.out)
         print("animation: %s" % (os.path.relpath(gif, ROOT) if gif

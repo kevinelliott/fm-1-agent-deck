@@ -18,9 +18,10 @@ has yet to replace this. Each screen is shown full size in
 ▶ **[Play Agent Deck live in your browser](https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt)**
 — a firmware package running in **fm1-emu** on this project's own player
 page. One click on **Start** and it plays a scripted session by itself:
-daemon frames in, pages walked, the blocked agent selected. The player
-still carries **firmware 0.1** (three plain pages), so it shows the
-panel and the protocol working, not the screens above it here.
+daemon frames in, the GRID as a list and as boxes, every page walked.
+It is the same firmware 0.6.2 package as on the unit. A one-page
+**[cheat sheet](https://kevinelliott.github.io/fm-1-agent-deck/cheatsheet.html)**
+has the controls.
 (Device-only view for embedding elsewhere:
 [embed link](https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt&embed=1).)
 
@@ -85,6 +86,12 @@ and let the deck chime when someone needs you.
 > rather than long sessions with real agents — so expect rough edges. The
 > [arrival-day guide](#arrival-day-read-this-before-plugging-anything-in)
 > is the checklist for a first flash.
+
+> **Coming from another firmware:** Agent Deck is a controller with no
+> projects, patches or samples of its own, and it does not read any other
+> firmware's. It keeps only its own few settings in flash. Whether another
+> firmware's saved projects survive a visit to Agent Deck has not been
+> tested, so back them up first.
 
 > ⚠️ **Flashing custom firmware is at your own risk.** The FM-1's flash is
 > single-bank; an interrupted write can leave the unit dark until rescued
@@ -196,8 +203,8 @@ emulator's audio thread is what starts it) and it plays a scripted
 session by itself; afterwards the panel is yours — click the keys, turn
 the ALGORITHM knob, open the picker. A plain visit (no `script=`)
 boots the deck to `NO HOST`: it is a controller, and it wants its
-daemon. The player's package is still **firmware 0.1**: three pages, no
-footer, none of the colour screens. Refreshing it is on the roadmap.
+daemon. The player carries the current package (0.6.2); the session is
+written by `python3 tools/emu_shots.py --player`.
 
 **Embed it on a site:** the player supports fm1-emu's embed mode —
 this iframe windows just the device, auto-playing the demo:
@@ -211,7 +218,7 @@ this iframe windows just the device, auto-playing the demo:
 (Adjust the size to taste. GitHub renders no iframes in READMEs, which
 is why this page carries captures and a link instead.) You can also run the deck on the upstream
 [fm1-emu page](https://joakimeriksson.github.io/fm1-emu/): download
-[`dist/agentdeck-0.1.fwsc`](dist/agentdeck-0.1.fwsc), choose
+[`dist/agentdeck-0.6.2.fwsc`](dist/agentdeck-0.6.2.fwsc), choose
 **Open .fwsc…** there, and press **Start**.
 
 **Run it natively:** `tools/get_emu.sh` fetches the fm1-emu release
@@ -811,7 +818,6 @@ Limits, honestly:
   socket methods (see Troubleshooting).
 
 Roadmap ideas, in rough order: more hours on real hardware, and fixes →
-refreshing the browser player to the current firmware →
 Firmware Hub listing (the Hub requires a package tested on real
 hardware; listing unlocks fm1-emu's one-click `?fw=` browser link from
 this README) → BLE MIDI transport → per-agent cost/token readouts on
@@ -825,7 +831,8 @@ menu-bar/status companion so the daemon can autostart.
 |---|---|
 | `PROTOCOL.md` | The wire spec (v6) |
 | `LICENSE` | GPL-3.0 |
-| `fmhub.json` · `docs/card.png` | The card text and picture for [The Firmware Hub](https://thefirmwarehub.com/) |
+| `fmhub.json` · `docs/card.png` | The card text, links and picture for [The Firmware Hub](https://thefirmwarehub.com/) |
+| `docs/cheatsheet.html` | The controls on one page, served by GitHub Pages |
 | `host/agentdeck.py` | The daemon: Herdr + tmux backends, MIDI + simulate modes |
 | `host/test_simulate.sh` | End-to-end simulate test against real tmux panes |
 | `host/simulate-test.log` | Latest tmux test run — ALL PASS |
@@ -841,7 +848,7 @@ menu-bar/status companion so the daemon can autostart.
 | `docs/play/` | The self-hosted live player: vendored fm1-emu (MIT) + Agent Deck catalog + the auto-play demo script, served by GitHub Pages |
 | `docs/fm1-agent-deck-hero.jpg` | The FM-1 picture (White and Blue) the animation is built on, with the GRID page in its display |
 | `firmware-build/` | Dinghy tree + Agent Deck identity; `./build.sh` here |
-| `dist/agentdeck-0.6.2.fwsc` | The built firmware package, ready to flash, and the one installed on the author's FM-1 (`-0.6.1` … `-0.1`: earlier releases; the web player still runs 0.1) |
+| `dist/agentdeck-0.6.2.fwsc` | The built firmware package, ready to flash, and the one installed on the author's FM-1 (`-0.6.1` … `-0.1`: earlier releases) |
 | `host/config.example.json` | Example daemon config (prompt presets, default agent) |
 | `tools/gen_host_test.py` | Generates the host-harness session `firmware-build/tests/agentdeck.txt` |
 

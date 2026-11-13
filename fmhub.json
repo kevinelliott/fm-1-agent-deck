@@ -4,7 +4,9 @@
   "kinds": [
     "other"
   ],
+  "play": "https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt",
+  "cheat": "https://kevinelliott.github.io/fm-1-agent-deck/cheatsheet.html",
   "image": "docs/card.png",
   "color": "#B48CFF",
-  "sounds": "none - all synthesised"
+  "sounds": "none"
 }
