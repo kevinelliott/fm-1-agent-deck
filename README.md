@@ -4,25 +4,30 @@ Custom firmware for the **M-VAVE FM-1** that turns the little FM synth into a
 hardware desk controller for CLI coding agents (Claude Code, Codex, …)
 running on your computer.
 
-[![Agent Deck playing in fm1-emu: the GRID, DETAIL and APPROVALS pages of the real firmware, cycling](docs/emu-demo.gif)](https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt)
+![Agent Deck's screen, captured from the firmware package running in fm1-emu: the splash, the GRID as a list and as boxes, DETAIL, APPROVALS, the MENU and ABOUT](docs/emu-demo.gif)
+
+*The FM-1's 240×240 screen running firmware 0.6.1 — every frame is the
+LCD of the shipped package in [fm1-emu](#see-it-running--fm1-emu), not a
+drawing. All of the screens are in [the tour](#a-tour-of-the-screens)
+below.*
 
 ▶ **[Play Agent Deck live in your browser](https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt)**
-— the shipped firmware package, running in **fm1-emu** on this project's
-own player page. One click on **Start** (browsers hold back sound until
-a click; the deck itself is silent) and it plays a scripted session by
-itself: daemon frames in, pages walked, the blocked agent selected.
-(GitHub READMEs can't run iframes, so the live embed lives on the
-project site; the animation above is that same session, captured from
-fm1-emu. Device-only view for embedding elsewhere:
+— a firmware package running in **fm1-emu** on this project's own player
+page. One click on **Start** and it plays a scripted session by itself:
+daemon frames in, pages walked, the blocked agent selected. The player
+still carries **firmware 0.1** (three plain pages), so it shows the
+panel and the protocol working, not the screens above.
+(Device-only view for embedding elsewhere:
 [embed link](https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt&embed=1).)
 
-![An FM-1 in White and Blue running Agent Deck — the screen shows the firmware's GRID page: CLAUDE-1 working, CODEX-2 blocked](docs/fm1-agent-deck-hero.jpg)
+![An FM-1 in White and Blue running Agent Deck — the screen shows the firmware's GRID page: eight agents, web-frontend blocked and selected](docs/fm1-agent-deck-hero.jpg)
 
 *What that picture is: a visualization of the FM-1 (White and Blue colorway)
-running Agent Deck. The screen content is not a mockup — it is the shipped
-firmware package itself, running on the emulated FM-1 chip in
-[fm1-emu](#see-it-running--fm1-emu) and composited into the display. Real
-hardware photos will replace this render once the first unit is flashed.*
+running Agent Deck, not a photograph of the author's unit. The screen
+content is not a mockup — it is the GRID page of firmware 0.6.1, captured
+from the package running in [fm1-emu](#see-it-running--fm1-emu) and
+composited into the display. The firmware runs on a real FM-1 today; a
+photo of it has yet to replace this render.*
 
 ## Why an FM synth?
 
@@ -71,16 +76,18 @@ fire a canned prompt at it, put it on auto-approve, start a new agent on an
 empty key, hold REC and tap every blinking key to clear a row of approvals,
 and let the deck chime when someone needs you.
 
-> **Status (Nov 2026):** running on real hardware. **Firmware 0.3**
-> (protocol v3) is installed on the author's FM-1 — flashed over USB with
-> the installer in this repo, as 0.1 and 0.2 were before it — and driven
-> there by the daemon against a live Herdr session. The newest package,
-> **0.6** (`dist/agentdeck-0.6.fwsc`, protocol v6), adds LED cues, row
-> markers, context gauges and a wider set of sounds on top of that. Every release is first built with the JieLi
-> toolchain and booted in [fm1-emu](https://github.com/joakimeriksson/fm1-emu),
-> the chip-level FM-1 emulator (see [See it running](#see-it-running--fm1-emu)).
-> Still young: individual features have had far more emulator and
-> simulate-mode time than hours on the desk, so expect rough edges — the
+> **Status (Nov 2026):** running on real hardware. **Firmware 0.6.1**
+> (protocol v6), the newest package (`dist/agentdeck-0.6.1.fwsc`), is
+> installed on the author's FM-1 — flashed over USB with the installer in
+> this repo, as every release from 0.1 on was before it — and driven
+> there by the daemon against a live Herdr session. Every package is
+> built with the JieLi toolchain and booted in
+> [fm1-emu](https://github.com/joakimeriksson/fm1-emu), the chip-level
+> FM-1 emulator, before it goes anywhere near the unit.
+> Still young: the features have had far more emulator and simulate-mode
+> time than hours on the desk — the prompt queue, pipelines and
+> auto-approve rules have so far been exercised against a stub backend
+> rather than long sessions with real agents — so expect rough edges. The
 > [arrival-day guide](#arrival-day-read-this-before-plugging-anything-in)
 > is the checklist for a first flash.
 
@@ -88,6 +95,76 @@ and let the deck chime when someone needs you.
 > single-bank; an interrupted write can leave the unit dark until rescued
 > via the chip's mask-ROM boot mode. Read the risk notes in the
 > arrival-day section before you flash anything — this project or any other.
+
+---
+
+## A tour of the screens
+
+Colour means state everywhere: **amber** is waiting on you, **green** is
+finished, **red** is broken, **white** is working, **grey** is at rest.
+Every image here is the LCD of `dist/agentdeck-0.6.1.fwsc` running in
+fm1-emu, fed the frames the daemon sends; the fleet of eight agents is
+made up for the pictures, the pixels are not.
+[`tools/emu_shots.py`](tools/emu_shots.py) regenerates all of them.
+
+**Starting up.** A splash at power-on, then the deck waits for its
+daemon. Once the host is there and no agents are running, it says what
+to do next.
+
+| Power-on | No daemon yet | Host connected, no agents |
+|---|---|---|
+| ![Splash: the nine-pad logo, AGENT DECK, firmware 0.6.1](docs/shot-splash.png) | ![Waiting for the host: NO HOST in the header, and the command to run on the computer](docs/shot-no-host.png) | ![No agents yet: pick a key, press PLAY, or start one in a terminal](docs/shot-empty.png) |
+
+**GRID** — the fleet. The header carries a logo whose nine pads are the
+first nine slots in their state colours, the page name, a five-segment
+page indicator, a host light, and a chip per state with its count. Each
+row is a state-coloured edge, the slot number, a state icon, the name, a
+kind tag (`CL` Claude Code, `CX` Codex, `OC` opencode, `GK` Grok, `CP`
+Copilot, `SH` a shell), time in state, flags (`A` auto-approve, `R`
+repeat, `+` marked, `Q` prompt queued) and a context gauge. The bottom
+line is the footer: the armed prompt preset, or — tinted — whatever just
+happened. Press HOME again and the same fleet becomes boxes.
+
+| The list | An agent calls for you | The same fleet as boxes |
+|---|---|---|
+| ![GRID: eight agents as rows; web-frontend, blocked, is selected](docs/shot-grid.png) | ![GRID with an amber footer naming what the blocked agent wants to run: Bash npm test](docs/shot-grid-alert.png) | ![GRID as boxes: eight tiles coloured by state, the selected one outlined in white](docs/shot-boxes-8.png) |
+
+**Boxes** resize with the deck: big tiles with the full name for a few
+agents, down to all 27 keys of the page at once, where each tile is the
+slot number and a state icon. Free keys are outlines.
+
+| Up to 4 agents | Up to 16 | A full page of 27 |
+|---|---|---|
+| ![Boxes, four agents: large tiles with name, kind, flags and time in state](docs/shot-boxes-4.png) | ![Boxes, sixteen agents in a four-by-four grid](docs/shot-boxes-16.png) | ![Boxes, twenty-seven agents: one small tile per key](docs/shot-boxes-27.png) |
+
+**DETAIL** — one agent. The state as a pill, time in state, flags, the
+kind, a context bar, then six lines of text. EDIT cycles what the text
+is: the agent's own **OUTPUT**, the daemon's **INFO** summary, and the
+**DIFF** against the last commit.
+
+| OUTPUT | INFO | DIFF |
+|---|---|---|
+| ![DETAIL, OUTPUT: the agent's permission prompt with its three numbered choices](docs/shot-detail-output.png) | ![DETAIL, INFO: session title, model and context, mode and git branch, queue, what was asked, what it wants to run](docs/shot-detail-info.png) | ![DETAIL, DIFF: files changed with lines added and removed, new files, recent commits](docs/shot-detail-diff.png) |
+
+**APPROVALS and ABOUT.** APPROVALS lists only the agents waiting on you —
+the page that makes the device worth having — and says so when the list
+is empty. ABOUT is the device describing itself and its host.
+
+| Waiting on you | Nobody waiting | ABOUT |
+|---|---|---|
+| ![APPROVALS: three blocked agents](docs/shot-approvals.png) | ![APPROVALS: a large tick and ALL CLEAR](docs/shot-all-clear.png) | ![ABOUT: firmware and protocol version, device identity, host connection, daemon, agents, uptime](docs/shot-about.png) |
+
+**MENU** is drawn by the daemon, so it grows without a firmware update:
+SELECT moves, SEL picks, FX backs out.
+
+| Top level | THIS AGENT | FLEET | SETTINGS |
+|---|---|---|---|
+| ![MENU: this agent, fleet, new agent, send prompt, event log, close agent, settings](docs/shot-menu.png) | ![THIS AGENT: view, repeat prompt, auto-approve, marked, muted, queued prompts, commands](docs/shot-menu-agent.png) | ![FLEET: one line per agent with state, time in state and context size](docs/shot-menu-fleet.png) | ![SETTINGS: sounds, feedback sounds, blocked alert, nag, desktop notify, follow the blocked, focus on edit](docs/shot-menu-settings.png) |
+
+What the screenshots cannot show: the key LEDs, which carry the same
+states (see [Keys and LEDs](#keys-and-leds)), the icons' motion — the
+spinner turns, the warning sign blinks, a blocked tile pulses — and the
+sounds.
 
 ---
 
@@ -99,33 +176,32 @@ Joakim Eriksson's emulator for the FM-1: it emulates the JieLi AC791N
 chip itself (both CPU cores, screen, keys, encoders, MIDI), so firmware
 packages run in it *unchanged* — the same `.fwsc` you would flash.
 
-These are not mockups. They are the LCD of `dist/agentdeck-0.6.fwsc`
-booted in fm1-emu, fed the exact frame stream the real daemon sends
-(injected through the FM-1's MIDI IN jack, which the firmware's platform
-merges into the same queue as USB MIDI), with the ALGORITHM encoder
-turned to walk the pages — captured by
-[`tools/emu_test.py`](tools/emu_test.py):
+The screens in [the tour](#a-tour-of-the-screens) come from there: the
+LCD of `dist/agentdeck-0.6.1.fwsc` booted in fm1-emu and fed the frame
+stream the daemon sends (injected through the FM-1's MIDI IN jack, which
+the firmware's platform merges into the same queue as USB MIDI). Two
+scripts drive it:
 
-| GRID | DETAIL | APPROVALS |
-|---|---|---|
-| ![GRID page in fm1-emu: four agents as coloured rows with state icons, kind tags, flags and context gauges under a header of state chips](docs/emu-grid.png) | ![DETAIL page in fm1-emu: CLAUDE-1 working, its state pill, context bar and the host's INFO text](docs/emu-detail.png) | ![APPROVALS page in fm1-emu: CODEX-2 blocked, waiting on you](docs/emu-approvals.png) |
-
-| MENU | ABOUT | GRID as boxes |
-|---|---|---|
-| ![MENU page in fm1-emu: this agent, new agent, send prompt, event log, close agent, settings, help](docs/emu-menu.png) | ![ABOUT page in fm1-emu: firmware and protocol version, device identity, host connection, daemon, agents, uptime](docs/emu-about.png) | ![GRID as boxes in fm1-emu: six agents as tiles coloured by state](docs/emu-boxes.png) |
-
-(The animation at the top of this page and the browser player below
-still run firmware 0.1 — three pages, no footer.)
+- [`tools/emu_test.py`](tools/emu_test.py) is the **test**: one session
+  on the packaged firmware — boot, a full resync, the ALGORITHM encoder
+  turned through all five pages, HOME for the boxes — that fails on a
+  CPU halt, a dead LCD or a blank page.
+- [`tools/emu_shots.py`](tools/emu_shots.py) is the **camera**: one
+  short emulator run per scene (start-up, GRID, boxes, DETAIL,
+  APPROVALS, MENU, ABOUT), saving the `docs/shot-*.png` images and the
+  animation at the top of this page.
 
 **Run it yourself, in the browser:** this project hosts its own
 fm1-emu player (a vendored copy of the emulator whose only firmware
 is Agent Deck — see [`docs/play/`](docs/play/README.md)):
 **[kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt](https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt)**.
-One click on **Start** and it plays the same scripted session as the
-captures above; afterwards the panel is yours — click the keys, turn
+One click on **Start** (browsers hold back sound until a click; the
+emulator's audio thread is what starts it) and it plays a scripted
+session by itself; afterwards the panel is yours — click the keys, turn
 the ALGORITHM knob, open the picker. A plain visit (no `script=`)
 boots the deck to `NO HOST`: it is a controller, and it wants its
-daemon.
+daemon. The player's package is still **firmware 0.1**: three pages, no
+footer, none of the colour screens. Refreshing it is on the roadmap.
 
 **Embed it on a site:** the player supports fm1-emu's embed mode —
 this iframe windows just the device, auto-playing the demo:
@@ -136,10 +212,8 @@ this iframe windows just the device, auto-playing the demo:
         title="Agent Deck running in fm1-emu"></iframe>
 ```
 
-(Adjust the size to taste. This is also why the animation at the top
-of this README exists: GitHub renders no iframes in READMEs, so the
-top of the page carries the captured session and one click to the
-live one.) You can also run the deck on the upstream
+(Adjust the size to taste. GitHub renders no iframes in READMEs, which
+is why this page carries captures and a link instead.) You can also run the deck on the upstream
 [fm1-emu page](https://joakimeriksson.github.io/fm1-emu/): download
 [`dist/agentdeck-0.1.fwsc`](dist/agentdeck-0.1.fwsc), choose
 **Open .fwsc…** there, and press **Start**.
@@ -155,8 +229,8 @@ canned frames — for the full loop, pair the daemon with tmux/Herdr in
 player above is self-hosted because the upstream fm1-emu page only
 deep-links (`?fw=`) firmwares in its own catalog; a listing on the
 [FM-1 Firmware Hub](https://thefirmwarehub.com/) would put Agent Deck
-in that catalog too, but the Hub only lists firmwares already tested
-on real hardware — so that waits until after arrival day.
+in that catalog too. The Hub only lists firmwares already tested on
+real hardware; Agent Deck now is, and has not been submitted yet.
 
 ---
 
@@ -180,8 +254,9 @@ sh host/test_simulate.sh        # writes host/simulate-test.log
 # 3. Or boot the real firmware package on the emulated FM-1 chip and
 #    watch the deck itself work (fm1-emu; see "See it running" above):
 sh tools/get_emu.sh             # one-time: fetch the fm1-emu binary
-python3 tools/emu_test.py       # boots dist/*.fwsc, injects daemon frames,
-                                # walks the pages, snapshots the LCD
+python3 tools/emu_test.py       # boots the newest dist/*.fwsc, injects daemon
+                                # frames, walks the pages, snapshots the LCD
+python3 tools/emu_shots.py --out build/shots   # every screen in the tour
 ```
 
 With a real FM-1 flashed with Agent Deck and plugged in over USB:
@@ -327,12 +402,12 @@ daemon: SELECT moves, SEL picks, FX backs out.
 | HELP | the control list above, on the device |
 | ABOUT | the ABOUT page (firmware 0.6; a text version on older firmware) |
 
-**The screen** (firmware 0.6) uses colour for state everywhere: amber is
-waiting on you, green is finished, red is broken, white is working, grey
-is at rest.
+**The screen** (firmware 0.6) is shown page by page in
+[the tour](#a-tour-of-the-screens). In short:
 
-- The **header** carries a small logo whose nine pads are the first nine
-  slots in their state colours, the page name with a five-segment page
+- **Colour is state:** amber is waiting on you, green is finished, red
+  is broken, white is working, grey is at rest.
+- The **header** has the live nine-pad logo, the page name and page
   indicator, a host light, and a chip per state with its count.
 - A **GRID row** is a state-coloured edge, the slot number, a state icon
   (a spinner while working, a blinking warning sign while blocked, a
@@ -343,9 +418,11 @@ is at rest.
 - **GRID as boxes** (HOME again on the GRID; remembered across power
   cycles): a tile per agent, filled in its state's colour — amber and
   pulsing while it waits on you, green when finished, red when broken —
-  with its name, icon, kind, time in state and context bar. The tiles
-  resize with the deck: four big ones for a few agents, down to all 27
-  keys of the page at once; free keys are outlines.
+  with its name, icon, kind, time in state and, up its right edge, the
+  context gauge (along the bottom edge in 0.6, where it ran through the
+  tile's last line of text; 0.6.1 moved it). The tiles resize with the
+  deck: four big ones for a few agents, down to all 27 keys of the page
+  at once; free keys are outlines.
 - **DETAIL** shows the state as a pill, the kind, the context bar and a
   tag for the INFO / DIFF views; the text is coloured by what it is
   (`LABEL:` prefixes, added lines green, prompts white).
@@ -433,17 +510,24 @@ attention chime three times in a row instead, and the feedback sounds
 stay silent.
 Each GRID row shows how long the agent has been in its state.
 
-The footer, chimes, K1/K4 and the auto-approve marker need **firmware
-0.2**, the chords, the MENU page and the INFO toggle **0.3**, the `R`
-marker and the lit SEQ / LFO / blinking SAVE **0.4**, the `+` marker,
-the context gauges and the new sounds **0.5**, the `Q` marker and the
-INFO / DIFF tag on DETAIL, the colour screens and the ABOUT page **0.6**; an older unit gets every
-other control above (chord buttons then act at once, on press).
+**Which firmware has what.** The daemon works with every firmware
+release and leaves out what an older one cannot show; everything not
+listed here works on all of them (on firmware 0.1 and 0.2 the chord
+buttons act at once, on press).
 
-The four screen pages: **GRID** (every agent as a labelled strip with its
-state), **DETAIL** (the selected agent plus its output, word-wrapped, 6
-lines at a time), **APPROVALS** (just the agents waiting on you — the page
-that makes the device worth having), and **MENU** (above).
+| Firmware | Adds |
+|---|---|
+| 0.2 | the footer, chimes, K1 / K4, the auto-approve marker |
+| 0.3 | chords and knob combos (a held button), the MENU page, the INFO toggle |
+| 0.4 | the `R` marker, lit SEQ / LFO, blinking SAVE |
+| 0.5 | the `+` marker, context gauges, the alert and feedback sounds, per-sound loudness |
+| 0.6 | the colour screens, the box view, the ABOUT page, the `Q` marker, the INFO / DIFF tag on DETAIL |
+| 0.6.1 | the box view's context gauge on the tile's right edge |
+
+The five screen pages, in ALGORITHM order: **GRID** (every agent, as a
+list or as boxes), **DETAIL** (the selected agent plus six lines of its
+output, its INFO or its DIFF), **APPROVALS** (just the agents waiting on
+you), **MENU** and **ABOUT**.
 
 ---
 
@@ -574,7 +658,7 @@ git clone --depth 1 --branch AC79NN_SDK_V1.2.1_2023-12-13 \
     https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git ~/fw-AC79_AIoT_SDK
 pip install mido python-rtmidi Pillow
 
-./build.sh --release 0.6                     # -> build/agentdeck-0.6.fwsc
+./build.sh --release 0.6.1                   # -> build/agentdeck-0.6.1.fwsc
 
 # host emulator test (no device, no toolchain): tests/agentdeck.txt
 # (generated by tools/gen_host_test.py; on macOS add '-Dsection(x)=' to cc)
@@ -588,13 +672,19 @@ build/host/agentdeck build/host/agentdeck tests/agentdeck.txt
 # run this on the package you actually ship, after every release build
 sh tools/get_emu.sh                          # one-time
 python3 tools/emu_test.py                    # -> build/emu-test/*.png
+python3 tools/emu_shots.py                   # -> docs/shot-*.png, docs/emu-demo.gif
 ```
 
-Verified 2026-11-08: the device build passes all of Dinghy's checks
-(image 57,364 B of 581,564; RAM 17,728 B of 98,304), the `.fwsc` parses
-under the installer's own `load_package` (CRCs OK), and the emulator
-output is in `firmware/host-test.log` with the screenshot at
-`firmware/screen-grid.png`. One emulator quirk worth knowing: the host
+`tools/emu_shots.py` is slow: each of its eight scenes is its own
+emulator run, a couple of minutes of CPU apiece on the author's Mac.
+Name scenes to redo just those (`tools/emu_shots.py grid about`).
+
+Verified 2026-11-08 (firmware 0.1): the device build passes all of
+Dinghy's checks, the `.fwsc` parses under the installer's own
+`load_package` (CRCs OK), and the emulator output is in
+`firmware/host-test.log`. As of 0.6.1 (2026-11-13) the build still
+passes those checks at 65,292 B of 581,564 for the image and 18,432 B
+of 98,304 of RAM. One emulator quirk worth knowing: the host
 harness stubs `fm1_input_note_edges()` to 0, so the firmware diffs
 `fm1_in.notes` levels like Dinghy's own app does — identical behaviour
 on real hardware.
@@ -603,8 +693,8 @@ Verified 2026-11-09: the same packaged `.fwsc` boots in **fm1-emu**
 (0.4.0) on the emulated AC791N and runs a full scripted session to
 completion with no CPU halt — accepting the daemon's frame stream
 injected through the MIDI IN jack and rendering all its pages; the
-captures are in [`docs/`](#see-it-running--fm1-emu) and the session is
-reproducible with `tools/emu_test.py`. That makes fm1-emu the
+session is reproducible with `tools/emu_test.py`, and every package
+since has been through it. That makes fm1-emu the
 project's on-device test stand-in: the host harness above stays the
 fast inner loop for logic, but anything that touches boot, screen,
 panel or protocol is only "tested" once it has run as a package in
@@ -612,10 +702,15 @@ fm1-emu.
 
 ## Arrival day (read this before plugging anything in)
 
-The first target unit is a **late-2026 FM-1**: it will almost certainly
-carry the **UC25HQ80** flash chip (JEDEC id `0xB36014`), *not* the early
-Puya P25Q80 (`0x856014`), and it will likely ship with **stock
-firmware V16**.
+This section was written before the author's unit arrived, as the plan
+for its first flash. That unit has since been flashed over USB with
+step 3 below — every release from 0.1 to 0.6.1 — and runs Agent Deck
+today. The plan stays here as the checklist for anyone else's first
+flash.
+
+A **late-2026 FM-1** will most likely carry the **UC25HQ80** flash chip
+(JEDEC id `0xB36014`), *not* the early Puya P25Q80 (`0x856014`), and
+ship with **stock firmware V16**.
 
 **Flash-chip check — already handled, verify anyway.** The only flash-ID
 gate in the whole stack is on-device: `FL_JEDEC_OK(id)` in
@@ -646,7 +741,7 @@ that one line is the fix.
    use M-VAVE's M-UPGRADE updater (or a browser installer's
    "Return to official V15" option) if it shipped with V16.
 3. Flash Agent Deck over USB, using the package in `dist/`:
-   `python3 firmware-build/tools/fm1_install.py dist/agentdeck-0.6.fwsc`
+   `python3 firmware-build/tools/fm1_install.py dist/agentdeck-0.6.1.fwsc`
    (or the FM-1 Firmware Hub in Chrome/Edge). The installer asks before
    it writes; the FM-1 restarts into Agent Deck.
 4. Start the daemon (`--backend auto`), watch the FM-1 screen switch
@@ -687,7 +782,8 @@ steps get repeated on the real unit.
 
 | Test | Command | Covers |
 |---|---|---|
-| **fm1-emu device test** | `python3 tools/emu_test.py` (after `tools/get_emu.sh`) | the packaged `.fwsc` booting on the emulated AC791N, daemon frame stream in via MIDI IN, GRID/DETAIL/APPROVALS/MENU rendering, ALGORITHM page walk; LCD snapshots in `build/emu-test/` |
+| **fm1-emu device test** | `python3 tools/emu_test.py` (after `tools/get_emu.sh`) | the packaged `.fwsc` booting on the emulated AC791N, daemon frame stream in via MIDI IN, all five pages and the box view rendering, ALGORITHM page walk; LCD snapshots in `build/emu-test/` |
+| fm1-emu screenshots | `python3 tools/emu_shots.py` | not a pass/fail test of behaviour: one emulator run per scene, failing only on a crash or a blank screen. Its output is the tour above, which is where a drawing mistake gets seen |
 | tmux end-to-end | `sh host/test_simulate.sh` | discovery, BLOCKED/WORKING/IDLE heuristics, approve landing in the pane (`host/simulate-test.log`) |
 | Herdr live run | `python3 host/agentdeck.py --backend herdr --simulate` against a running Herdr | native states, detail text, approve/deny/interrupt/prompt/start (`host/herdr-test.log` is a captured run) |
 | Firmware host harness | the `cc …` build in [Building](#building-the-firmware) | frame parsing, screen rendering, panel event output (`firmware/host-test.log`) — fast inner loop; not a substitute for the fm1-emu run |
@@ -732,12 +828,13 @@ menu-bar/status companion so the daemon can autostart.
 | `firmware/screen-grid.png` | The GRID page as rendered by the host harness |
 | `tools/emu_test.py` | fm1-emu device test: boots the packaged `.fwsc`, injects daemon frames, walks the pages, snapshots the LCD |
 | `tools/get_emu.sh` | Fetches the fm1-emu release binary into `tools/fm1-emu-bin/` |
-| `docs/emu-grid.png` · `docs/emu-detail.png` · `docs/emu-approvals.png` · `docs/emu-menu.png` · `docs/emu-about.png` · `docs/emu-boxes.png` | The five pages and the box view as rendered by the packaged firmware in fm1-emu (`python3 tools/emu_test.py --out docs` regenerates them) |
-| `docs/emu-demo.gif` | The emu session as an animation (GRID → DETAIL → APPROVALS), at the top of this README |
+| `tools/emu_shots.py` | The screenshots: one fm1-emu run per scene on the packaged `.fwsc`, writing `docs/shot-*.png` and `docs/emu-demo.gif` |
+| `docs/shot-*.png` | The 19 screens of [the tour](#a-tour-of-the-screens), as rendered by the packaged firmware in fm1-emu |
+| `docs/emu-demo.gif` | Nine of those screens as an animation, at the top of this README |
 | `docs/play/` | The self-hosted live player: vendored fm1-emu (MIT) + Agent Deck catalog + the auto-play demo script, served by GitHub Pages |
-| `docs/fm1-agent-deck-hero.jpg` | Hero image: an FM-1 (White and Blue) with the packaged firmware's fm1-emu GRID page composited into its screen |
+| `docs/fm1-agent-deck-hero.jpg` | Hero image: an FM-1 (White and Blue) with firmware 0.6.1's fm1-emu GRID page (`docs/shot-grid.png`) composited into its screen |
 | `firmware-build/` | Dinghy tree + Agent Deck identity; `./build.sh` here |
-| `dist/agentdeck-0.6.fwsc` | The built firmware package, ready to flash (`-0.5` … `-0.1`: earlier releases; the web player still runs 0.1) |
+| `dist/agentdeck-0.6.1.fwsc` | The built firmware package, ready to flash, and the one installed on the author's FM-1 (`-0.6` … `-0.1`: earlier releases; the web player still runs 0.1) |
 | `host/config.example.json` | Example daemon config (prompt presets, default agent) |
 | `tools/gen_host_test.py` | Generates the host-harness session `firmware-build/tests/agentdeck.txt` |
 
