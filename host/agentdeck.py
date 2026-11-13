@@ -96,7 +96,7 @@ import time
 import types
 
 PROTO_VERSION = 6
-VERSION = "0.6.2"               # the daemon's own, shown on ABOUT
+VERSION = "0.6.3"               # the daemon's own, shown on ABOUT
 
 # --- protocol constants (PROTOCOL.md) ---------------------------------------
 CH = 0x0F                      # MIDI channel 16 (low nibble)
