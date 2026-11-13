@@ -4,7 +4,7 @@
 The harness (firmware-build/tests/host.c) replays a script of timed panel
 and MIDI events against the natively compiled app. Frames are tedious to
 write by hand as one CC per line, so this builds the script from the same
-frame helpers the daemon uses (protocol v5: PROTOCOL.md).
+frame helpers the daemon uses (protocol v6: PROTOCOL.md).
 
 The session: a host says hello and syncs three agents (one auto-approved,
 one blocked), sets a footer, asks for the attention chime, moves the
@@ -25,7 +25,7 @@ CC_CTRL, CC_DATA = 118, 119
 FT_SLOT, FT_DETAIL, FT_META, FT_FOOTER, FT_BEEP, FT_SELECT, FT_TEXT, \
     FT_PAGE, FT_KEYLEDS, FT_BTNLEDS, FT_GAUGE, FT_HELLO_ACK = \
     0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0F
-KIND_AUTO, KIND_LOOP, KIND_MARK = 0x40, 0x20, 0x10
+KIND_AUTO, KIND_LOOP, KIND_MARK, KIND_QUEUE = 0x40, 0x20, 0x10, 0x08
 BTN = {"OCT-": 0, "OCT+": 1, "FX": 2, "SEL": 3, "ENV": 4, "LFO": 5, "EDIT": 6,
        "GLO": 7, "HOME": 8, "SAVE": 9, "ARP": 10, "SEQ": 11, "PLAY": 12,
        "REC": 13}
@@ -56,12 +56,14 @@ def at(ms, text):
     t += 20
 
 
+at(300, "shot")                                          # the power-on splash
+at(1000, "shot")                                         # no host yet: the empty deck
 cc(CC_CTRL, 0x7F)                                        # RESET
-frame(FT_HELLO_ACK, [5])
-frame(FT_META, [3, 1])
+frame(FT_HELLO_ACK, [6])
+frame(FT_META, [3, 1, 1])                               # v6: DETAIL shows INFO
 frame(FT_SLOT, bytes([0, 2, 1 | KIND_AUTO | KIND_LOOP]) + b"api-server")   # WORKING claude, auto + loop
 frame(FT_BTNLEDS, [0] * 9 + [3, 0, 2])                  # SAVE blinks, SEQ lit (v4)
-frame(FT_SLOT, bytes([1, 3, 2 | KIND_MARK]) + b"web-frontend")  # BLOCKED codex, marked (v5)
+frame(FT_SLOT, bytes([1, 3, 2 | KIND_MARK | KIND_QUEUE]) + b"web-frontend")  # BLOCKED codex, marked (v5), queue (v6)
 frame(FT_GAUGE, [0, 42])                                # context gauges (v5)
 frame(FT_GAUGE, [1, 91])
 frame(FT_SLOT, bytes([2, 4, 1]) + b"docs")                      # DONE claude
@@ -90,6 +92,9 @@ at(t + 100, "enc %d 1" % ENC["K2"])                      # forwarded only
 at(t + 100, "enc %d -1" % ENC["SELECT"])                 # local move -> CC 120
 at(t + 100, "btn %d" % BTN["HOME"])
 at(t + 1200, "shot")
+at(t + 100, "btn %d" % BTN["HOME"])                      # HOME again: GRID as boxes
+at(t + 300, "shot")
+at(t + 100, "btn %d" % BTN["HOME"])                      # and back to the list
 frame(FT_BEEP, [3])                                      # error chime
 frame(FT_BEEP, [5])                                      # heads-up chime (v5)
 at(t + 400, "shot")
@@ -113,7 +118,11 @@ for i, (style, text) in enumerate([(1, "MENU"), (5, "> NEW AGENT"),
 frame(FT_PAGE, [3])                                      # no echo
 at(t + 100, "enc %d 1" % ENC["SELECT"])                  # on MENU: forwarded
 at(t + 300, "shot")
-at(t + 100, "enc %d 1" % ENC["ALGORITHM"])               # MENU -> GRID, CC 121
+at(t + 100, "enc %d 1" % ENC["ALGORITHM"])               # MENU -> ABOUT, CC 121
+frame(FT_TEXT, bytes([8, 0]) + b"0.6 via herdr")         # v6: the host's lines for ABOUT
+frame(FT_TEXT, bytes([9, 0]) + b"macOS, python 3.12")
+at(t + 1200, "shot")
+at(t + 100, "enc %d 1" % ENC["ALGORITHM"])               # ABOUT -> GRID
 at(t + 400, "end")
 
 with open(OUT, "w") as f:
