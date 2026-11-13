@@ -53,7 +53,7 @@ CC_CTRL, CC_DATA = 118, 119
 FT_SLOT, FT_DETAIL, FT_META, FT_FOOTER, FT_BEEP, FT_TEXT, FT_BTNLEDS, \
     FT_GAUGE, FT_HELLO_ACK = 0x01, 0x02, 0x03, 0x04, 0x05, 0x07, 0x0A, 0x0B, \
     0x0F
-KIND_AUTO, KIND_LOOP, KIND_MARK = 0x40, 0x20, 0x10
+KIND_AUTO, KIND_LOOP, KIND_MARK, KIND_QUEUE = 0x40, 0x20, 0x10, 0x08
 FRAME_END, FRAME_RESET = 0x20, 0x7F
 
 
@@ -76,13 +76,13 @@ def frame_stream():
         cc(CC_CTRL, FRAME_END)
 
     cc(CC_CTRL, FRAME_RESET)
-    frame(FT_HELLO_ACK, bytes([5]))
-    frame(FT_META, bytes([2, 1]))
+    frame(FT_HELLO_ACK, bytes([6]))
+    frame(FT_META, bytes([2, 1, 1]))                # ..., DETAIL shows INFO
     # state 2=WORKING, kind 1=claude, auto-approved and on repeat (flags)
     frame(FT_SLOT, bytes([0, 2, 1 | KIND_AUTO | KIND_LOOP]) + b"CLAUDE-1")
     frame(FT_BTNLEDS, bytes([0] * 11 + [2]))        # SEQ lit: repeat is on
-    # state 3=BLOCKED, kind 2=codex, in the marked group
-    frame(FT_SLOT, bytes([1, 3, 2 | KIND_MARK]) + b"CODEX-2")
+    # state 3=BLOCKED, kind 2=codex, marked, with a prompt queued
+    frame(FT_SLOT, bytes([1, 3, 2 | KIND_MARK | KIND_QUEUE]) + b"CODEX-2")
     frame(FT_GAUGE, bytes([0, 42]))                 # context: 42% and 91% full
     frame(FT_GAUGE, bytes([1, 91]))
     for i, line in enumerate([
@@ -98,6 +98,13 @@ def frame_stream():
             (6, "  SEND PROMPT"), (6, "  EVENT LOG"), (6, "  CLOSE AGENT"),
             (6, "  SETTINGS"), (6, "  HELP")]):
         frame(FT_TEXT, bytes([i, style]) + text.encode())
+    frame(FT_SLOT, bytes([2, 4, 1]) + b"DOCS")      # DONE, claude
+    frame(FT_SLOT, bytes([3, 1, 3]) + b"RESEARCH")  # IDLE, opencode
+    frame(FT_SLOT, bytes([4, 5, 5]) + b"INFRA")     # ERROR, copilot
+    frame(FT_SLOT, bytes([5, 2, 1]) + b"API")       # WORKING, claude
+    frame(FT_GAUGE, bytes([5, 68]))
+    frame(FT_TEXT, bytes([8, 0]) + b"0.6 via herdr")    # ABOUT's two lines
+    frame(FT_TEXT, bytes([9, 0]) + b"macOS, python 3.12")
     return msgs
 
 
@@ -111,6 +118,9 @@ def keys_script(msgs, full):
         items.append("7000:ALGO:+1")    # GRID -> DETAIL
         items.append("10000:ALGO:+1")   # DETAIL -> APPROVALS
         items.append("13000:ALGO:+1")   # APPROVALS -> MENU
+        items.append("16000:ALGO:+1")   # MENU -> ABOUT
+        items.append("19000:ALGO:+1")   # ABOUT -> GRID
+        items.append("20000:HOME")      # HOME on the GRID: the boxes
     return ",".join(items)
 
 
@@ -176,8 +186,9 @@ def main():
     full = not args.boot_only
     if full:
         snaps = [(5000, "emu-grid"), (9000, "emu-detail"),
-                 (12000, "emu-approvals"), (15000, "emu-menu")]
-        ms = "16000"
+                 (12000, "emu-approvals"), (15000, "emu-menu"),
+                 (18000, "emu-about"), (22000, "emu-boxes")]
+        ms = "23000"
     else:
         snaps = [(4000, "emu-grid")]
         ms = "5000"
@@ -225,7 +236,7 @@ def main():
         return 1
     print("PASS: packaged firmware booted in fm1-emu, accepted the "
           "daemon frame stream, and rendered %s."
-          % ("all four pages" if full else "the GRID page"))
+          % ("all five pages and the boxes" if full else "the GRID page"))
     return 0
 
 
