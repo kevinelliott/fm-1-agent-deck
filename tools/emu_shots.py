@@ -79,7 +79,7 @@ class Scene:
     def hello(self):
         self.cc(CC_CTRL, 0x7F)                               # RESET
         self.frame(HELLO_ACK, [6])
-        self.text(TEXT, [8, 0], "0.6 via herdr")             # ABOUT's lines
+        self.text(TEXT, [8, 0], "0.6.2 via herdr")             # ABOUT's lines
         self.text(TEXT, [9, 0], "macOS, python 3.12")
         self.footer(0, "P2/9 run tests + fix")
 

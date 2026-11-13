@@ -9,7 +9,7 @@ running on your computer.
 *What the animation is: a picture of the FM-1 (White and Blue colorway) with
 Agent Deck's screen playing in its display — a visualization, not a
 video of the author's unit. The screen content is not a mockup: every
-frame is the LCD of firmware 0.6.1, captured from the shipped package
+frame is the LCD of firmware 0.6.2, captured from the shipped package
 running in [fm1-emu](#see-it-running--fm1-emu) and set into the display
 pixel for pixel. The firmware runs on a real FM-1 today; footage of it
 has yet to replace this. Each screen is shown full size in
@@ -71,8 +71,8 @@ fire a canned prompt at it, put it on auto-approve, start a new agent on an
 empty key, hold REC and tap every blinking key to clear a row of approvals,
 and let the deck chime when someone needs you.
 
-> **Status (Nov 2026):** running on real hardware. **Firmware 0.6.1**
-> (protocol v6), the newest package (`dist/agentdeck-0.6.1.fwsc`), is
+> **Status (Nov 2026):** running on real hardware. **Firmware 0.6.2**
+> (protocol v6), the newest package (`dist/agentdeck-0.6.2.fwsc`), is
 > installed on the author's FM-1 — flashed over USB with the installer in
 > this repo, as every release from 0.1 on was before it — and driven
 > there by the daemon against a live Herdr session. Every package is
@@ -97,7 +97,7 @@ and let the deck chime when someone needs you.
 
 Colour means state everywhere: **amber** is waiting on you, **green** is
 finished, **red** is broken, **white** is working, **grey** is at rest.
-Every image here is the LCD of `dist/agentdeck-0.6.1.fwsc` running in
+Every image here is the LCD of `dist/agentdeck-0.6.2.fwsc` running in
 fm1-emu, fed the frames the daemon sends; the fleet of eight agents is
 made up for the pictures, the pixels are not.
 [`tools/emu_shots.py`](tools/emu_shots.py) regenerates all of them.
@@ -108,7 +108,7 @@ to do next.
 
 | Power-on | No daemon yet | Host connected, no agents |
 |---|---|---|
-| ![Splash: the nine-pad logo, AGENT DECK, firmware 0.6.1](docs/shot-splash.png) | ![Waiting for the host: NO HOST in the header, and the command to run on the computer](docs/shot-no-host.png) | ![No agents yet: pick a key, press PLAY, or start one in a terminal](docs/shot-empty.png) |
+| ![Splash: the nine-pad logo, AGENT DECK, firmware 0.6.2](docs/shot-splash.png) | ![Waiting for the host: NO HOST in the header, and the command to run on the computer](docs/shot-no-host.png) | ![No agents yet: pick a key, press PLAY, or start one in a terminal](docs/shot-empty.png) |
 
 **GRID** — the fleet. The header carries a logo whose nine pads are the
 first nine slots in their state colours, the page name, a five-segment
@@ -172,7 +172,7 @@ chip itself (both CPU cores, screen, keys, encoders, MIDI), so firmware
 packages run in it *unchanged* — the same `.fwsc` you would flash.
 
 The screens in [the tour](#a-tour-of-the-screens) come from there: the
-LCD of `dist/agentdeck-0.6.1.fwsc` booted in fm1-emu and fed the frame
+LCD of `dist/agentdeck-0.6.2.fwsc` booted in fm1-emu and fed the frame
 stream the daemon sends (injected through the FM-1's MIDI IN jack, which
 the firmware's platform merges into the same queue as USB MIDI). Two
 scripts drive it:
@@ -225,8 +225,13 @@ canned frames — for the full loop, pair the daemon with tmux/Herdr in
 player above is self-hosted because the upstream fm1-emu page only
 deep-links (`?fw=`) firmwares in its own catalog; a listing on the
 [FM-1 Firmware Hub](https://thefirmwarehub.com/) would put Agent Deck
-in that catalog too. The Hub only lists firmwares already tested on
-real hardware; Agent Deck now is, and has not been submitted yet.
+in that catalog too. Up to 0.6.1 that was not possible: the packages
+identified as `FM-1_96N`, numbers other firmwares on the Hub already
+use. Firmware 0.6.2 has an identity of its own and the repository now
+carries what the Hub asks for (`fmhub.json`, a card picture, a root
+`LICENSE`); the submission itself has not been made yet, and the Hub
+lists firmwares that make music, so a coding-agent controller may not
+qualify.
 
 ---
 
@@ -519,6 +524,7 @@ buttons act at once, on press).
 | 0.5 | the `+` marker, context gauges, the alert and feedback sounds, per-sound loudness |
 | 0.6 | the colour screens, the box view, the ABOUT page, the `Q` marker, the INFO / DIFF tag on DETAIL |
 | 0.6.1 | the box view's context gauge on the tile's right edge |
+| 0.6.2 | no new controls: its own package identity (`FM-1_2435N`) and USB name (`FM-1 AGTDECK`) |
 
 The five screen pages, in ALGORITHM order: **GRID** (every agent, as a
 list or as boxes), **DETAIL** (the selected agent plus six lines of its
@@ -640,8 +646,9 @@ an agent redraws its UI in an unusual way.
 
 `firmware/agentdeck.c` is the whole app. `firmware-build/` is a
 [Dinghy](https://github.com/zvenson/dinghy) tree with that file dropped
-in as the app and its own identity (package **FM-1_96N**, update screen
-`AGTDECK`, `STORE_MAGIC` `0x4147444B` — "AGDK"). The app is deliberately
+in as the app and its own identity (package **FM-1_2435N**, where N is
+the minor version — 0.6.2 is `FM-1_24356`; USB name `FM-1 AGTDECK`;
+update screen `AGTDECK`, `STORE_MAGIC` `0x4147444B` — "AGDK"). The app is deliberately
 boring C: no audio (the synth engine is gone — this is a controller),
 integer math only, redraw-only-what-changed, `platform_poll()` every
 loop, settings persisted to flash.
@@ -654,7 +661,7 @@ git clone --depth 1 --branch AC79NN_SDK_V1.2.1_2023-12-13 \
     https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git ~/fw-AC79_AIoT_SDK
 pip install mido python-rtmidi Pillow
 
-./build.sh --release 0.6.1                   # -> build/agentdeck-0.6.1.fwsc
+./build.sh --release 0.6.2                   # -> build/agentdeck-0.6.2.fwsc
 
 # host emulator test (no device, no toolchain): tests/agentdeck.txt
 # (generated by tools/gen_host_test.py; on macOS add '-Dsection(x)=' to cc)
@@ -679,7 +686,7 @@ Name scenes to redo just those (`tools/emu_shots.py grid about`);
 Verified 2026-11-08 (firmware 0.1): the device build passes all of
 Dinghy's checks, the `.fwsc` parses under the installer's own
 `load_package` (CRCs OK), and the emulator output is in
-`firmware/host-test.log`. As of 0.6.1 (2026-11-13) the build still
+`firmware/host-test.log`. As of 0.6.2 (2026-11-13) the build still
 passes those checks at 65,292 B of 581,564 for the image and 18,432 B
 of 98,304 of RAM. One emulator quirk worth knowing: the host
 harness stubs `fm1_input_note_edges()` to 0, so the firmware diffs
@@ -701,7 +708,7 @@ fm1-emu.
 
 This section was written before the author's unit arrived, as the plan
 for its first flash. That unit has since been flashed over USB with
-step 3 below — every release from 0.1 to 0.6.1 — and runs Agent Deck
+step 3 below — every release from 0.1 to 0.6.2 — and runs Agent Deck
 today. The plan stays here as the checklist for anyone else's first
 flash.
 
@@ -738,7 +745,7 @@ that one line is the fix.
    use M-VAVE's M-UPGRADE updater (or a browser installer's
    "Return to official V15" option) if it shipped with V16.
 3. Flash Agent Deck over USB, using the package in `dist/`:
-   `python3 firmware-build/tools/fm1_install.py dist/agentdeck-0.6.1.fwsc`
+   `python3 firmware-build/tools/fm1_install.py dist/agentdeck-0.6.2.fwsc`
    (or the FM-1 Firmware Hub in Chrome/Edge). The installer asks before
    it writes; the FM-1 restarts into Agent Deck.
 4. Start the daemon (`--backend auto`), watch the FM-1 screen switch
@@ -759,6 +766,7 @@ mid-write.
 | Symptom | Likely cause / fix |
 |---|---|
 | Daemon: "no FM-1 MIDI port found" | Unit not plugged in, not flashed with Agent Deck, or another app holds the port. `--port` prints what it sees; check the cable carries data. |
+| The MIDI port is still called `Felucca` after updating to 0.6.2 | Releases up to 0.6.1 used the platform's USB name, and macOS remembers a MIDI device's name. The unit itself reports `FM-1 AGTDECK` (see System Information → USB); the daemon and installer find it under either name. To refresh the name, unplug the FM-1, delete the greyed-out device in Audio MIDI Setup → MIDI Studio, and plug it back in. |
 | FM-1 shows `NO HOST` | Daemon not running, or the heartbeat isn't flowing — restart the daemon; check the screen's header after ~2 s. |
 | Daemon: "herdr socket not found" | Herdr isn't running. Start it (`herdr server` for headless) or check `--herdr-session` / `$HERDR_SOCKET_PATH`. |
 | `agent.prompt: agent_blocked` | Working as designed: Herdr won't inject a prompt while an agent waits on an approval. Approve or deny it from the device (REC / FX) instead. |
@@ -816,6 +824,8 @@ menu-bar/status companion so the daemon can autostart.
 | Path | What |
 |---|---|
 | `PROTOCOL.md` | The wire spec (v6) |
+| `LICENSE` | GPL-3.0 |
+| `fmhub.json` · `docs/card.png` | The card text and picture for [The Firmware Hub](https://thefirmwarehub.com/) |
 | `host/agentdeck.py` | The daemon: Herdr + tmux backends, MIDI + simulate modes |
 | `host/test_simulate.sh` | End-to-end simulate test against real tmux panes |
 | `host/simulate-test.log` | Latest tmux test run — ALL PASS |
@@ -831,7 +841,7 @@ menu-bar/status companion so the daemon can autostart.
 | `docs/play/` | The self-hosted live player: vendored fm1-emu (MIT) + Agent Deck catalog + the auto-play demo script, served by GitHub Pages |
 | `docs/fm1-agent-deck-hero.jpg` | The FM-1 picture (White and Blue) the animation is built on, with the GRID page in its display |
 | `firmware-build/` | Dinghy tree + Agent Deck identity; `./build.sh` here |
-| `dist/agentdeck-0.6.1.fwsc` | The built firmware package, ready to flash, and the one installed on the author's FM-1 (`-0.6` … `-0.1`: earlier releases; the web player still runs 0.1) |
+| `dist/agentdeck-0.6.2.fwsc` | The built firmware package, ready to flash, and the one installed on the author's FM-1 (`-0.6.1` … `-0.1`: earlier releases; the web player still runs 0.1) |
 | `host/config.example.json` | Example daemon config (prompt presets, default agent) |
 | `tools/gen_host_test.py` | Generates the host-harness session `firmware-build/tests/agentdeck.txt` |
 
@@ -854,6 +864,6 @@ Agent Deck stands on a remarkable few months of FM-1 community work:
 
 ## License
 
-GPL-3.0, inherited from Dinghy/Felucca. See `firmware-build/LICENSE`
+GPL-3.0, inherited from Dinghy/Felucca. See `LICENSE`
 and `firmware-build/LICENSING.md`; keep the copyright headers if you
 redistribute.
