@@ -75,7 +75,7 @@ and let the deck chime when someone needs you.
 > (protocol v3) is installed on the author's FM-1 — flashed over USB with
 > the installer in this repo, as 0.1 and 0.2 were before it — and driven
 > there by the daemon against a live Herdr session. The newest package,
-> **0.5** (`dist/agentdeck-0.5.fwsc`, protocol v5), adds LED cues, row
+> **0.6** (`dist/agentdeck-0.6.fwsc`, protocol v6), adds LED cues, row
 > markers, context gauges and a wider set of sounds on top of that. Every release is first built with the JieLi
 > toolchain and booted in [fm1-emu](https://github.com/joakimeriksson/fm1-emu),
 > the chip-level FM-1 emulator (see [See it running](#see-it-running--fm1-emu)).
@@ -99,16 +99,20 @@ Joakim Eriksson's emulator for the FM-1: it emulates the JieLi AC791N
 chip itself (both CPU cores, screen, keys, encoders, MIDI), so firmware
 packages run in it *unchanged* — the same `.fwsc` you would flash.
 
-These are not mockups. They are the LCD of `dist/agentdeck-0.5.fwsc`
+These are not mockups. They are the LCD of `dist/agentdeck-0.6.fwsc`
 booted in fm1-emu, fed the exact frame stream the real daemon sends
 (injected through the FM-1's MIDI IN jack, which the firmware's platform
 merges into the same queue as USB MIDI), with the ALGORITHM encoder
 turned to walk the pages — captured by
 [`tools/emu_test.py`](tools/emu_test.py):
 
-| GRID | DETAIL | APPROVALS | MENU |
-|---|---|---|---|
-| ![GRID page in fm1-emu: CLAUDE-1 working, auto-approved and on repeat, CODEX-2 blocked, time in state, the armed prompt on the footer](docs/emu-grid.png) | ![DETAIL page in fm1-emu: CLAUDE-1 working, its latest output lines](docs/emu-detail.png) | ![APPROVALS page in fm1-emu: CODEX-2 blocked, waiting on you](docs/emu-approvals.png) | ![MENU page in fm1-emu: this agent, new agent, send prompt, event log, close agent, settings, help](docs/emu-menu.png) |
+| GRID | DETAIL | APPROVALS |
+|---|---|---|
+| ![GRID page in fm1-emu: four agents as coloured rows with state icons, kind tags, flags and context gauges under a header of state chips](docs/emu-grid.png) | ![DETAIL page in fm1-emu: CLAUDE-1 working, its state pill, context bar and the host's INFO text](docs/emu-detail.png) | ![APPROVALS page in fm1-emu: CODEX-2 blocked, waiting on you](docs/emu-approvals.png) |
+
+| MENU | ABOUT | GRID as boxes |
+|---|---|---|
+| ![MENU page in fm1-emu: this agent, new agent, send prompt, event log, close agent, settings, help](docs/emu-menu.png) | ![ABOUT page in fm1-emu: firmware and protocol version, device identity, host connection, daemon, agents, uptime](docs/emu-about.png) | ![GRID as boxes in fm1-emu: six agents as tiles coloured by state](docs/emu-boxes.png) |
 
 (The animation at the top of this page and the browser player below
 still run firmware 0.1 — three pages, no footer.)
@@ -269,13 +273,13 @@ Actions are executed by the host daemon against the *selected* agent:
 | **K2** / **K3** encoders | Up·Down / Left·Right arrow keys — with SEL, enough to answer any menu an agent shows |
 | **LFO** | cycle the agent's mode (Shift+Tab). Lit while the selected agent is marked (firmware 0.4) |
 | **PRESETS** encoder | arm a prompt preset (shown on the footer line) |
-| **SEQ** | send the armed preset as a prompt |
+| **SEQ** | send the armed preset as a prompt. To a BLOCKED agent it is **queued** instead and goes out once the agent is free (the row shows `Q`, firmware 0.6) |
 | **ARP** | toggle auto-approve for this agent (row shows `A`, ARP lights); the daemon then approves its prompts as they appear. Off by default, forgotten when the daemon restarts |
 | **K1** encoder | scroll DETAIL back through the agent's output; on the MENU page, move a page at a time |
 | **K4** encoder | jump to the next agent that needs you (BLOCKED, then ERROR, then DONE) |
 | **EDIT** | DETAIL page — and focus that pane on the computer. Pressed again on DETAIL: cycle **OUTPUT**, **INFO** and **DIFF** (below) |
-| **HOME** / **GLO** | GRID page / APPROVALS page. HOME pressed again on the GRID jumps to the agent that has waited longest (the oldest BLOCKED, else an ERROR, else a DONE) |
-| **ALGORITHM** encoder | cycle GRID → DETAIL → APPROVALS → MENU |
+| **HOME** / **GLO** | GRID page / APPROVALS page. HOME pressed again on the GRID flips it between the **list** and the **boxes** (firmware 0.6). GLO pressed again on APPROVALS jumps to the agent that has waited longest (the oldest BLOCKED, else an ERROR, else a DONE) |
+| **ALGORITHM** encoder | cycle GRID → DETAIL → APPROVALS → MENU → ABOUT |
 | **OCT− / OCT+** | previous / next slot page (54 slots total) |
 | **GLO held +** REC / FX / ENV / SEQ / ARP | the same for *every* agent it applies to: approve or deny all BLOCKED, interrupt all WORKING, send the preset to all IDLE/DONE, auto-approve off everywhere. **While any agents are marked, the same buttons act on the marked ones only**, and GLO + LFO clears the marks |
 | **MASTER** | chime volume |
@@ -297,6 +301,15 @@ a tap would hit:
 | **ARP + key** | toggle auto-approve on that agent (keys on auto light) |
 | **SEQ held ~1 s** | **repeat mode**: send the armed prompt to this agent every time it finishes a turn, up to `repeat_max` times. The row shows `R` and SEQ stays lit; hold SEQ again to stop |
 
+**Knobs with a button held** (firmware 0.3):
+
+| Combo | Action |
+|---|---|
+| **PLAY held + PRESETS** | choose which agent PLAY starts (cycles the installed CLIs) |
+| **SEQ held + PRESETS** | how many times repeat mode sends (`repeat_max`) |
+| **SEL held + K1** | scroll DETAIL a page at a time |
+| **LFO held + K4** | step through the marked agents |
+
 A chord button tapped on its own still does its normal thing (on release).
 
 **The MENU page** (firmware 0.3; ALGORITHM turns to it) is drawn by the
@@ -304,14 +317,62 @@ daemon: SELECT moves, SEL picks, FX backs out.
 
 | Entry | What it does |
 |---|---|
-| THIS AGENT | view, repeat mode, auto-approve, mark, **COMMANDS** (`/compact`, `/clear`, `/context`… from `commands`), focus on the computer, copy its last reply to the clipboard, open its folder |
+| THIS AGENT | view, repeat mode, auto-approve, mark, mute (no sounds or alerts from this one), its prompt queue (clear it), **COMMANDS** (`/compact`, `/clear`, `/context`… from `commands`), focus on the computer, copy its last reply to the clipboard, open its folder |
 | FLEET | every agent on one screen — state, time in state, context size — with the counts in the title; pick a row to open that agent's DETAIL. Also MARK ALL / CLEAR MARKS |
 | NEW AGENT | pick an installed agent CLI and a directory (the current agents' directories plus `projects` from the config) and start it. `IN A NEW WORKTREE: YES` first makes a git worktree next to the repository (`<repo>-wt1` on branch `deck/wt1`, and so on) and starts the agent there |
-| SEND PROMPT | `AGAIN:` what the agent was last asked (Claude Code), then the preset list; pick one to send to the selected agent |
+| SEND PROMPT | `IF WORKING:` send now or queue it; `AGAIN:` what the agent was last asked (Claude Code), then the preset list; pick one to send to the selected agent |
 | EVENT LOG | who got blocked, finished, was approved or closed, and how long ago |
 | CLOSE AGENT | close the selected agent's pane, after a yes/no |
-| SETTINGS | sounds, feedback sounds, how loud the BLOCKED alert is, nag while blocked (alert again every 2 / 5 / 10 min), desktop notifications, focus-on-EDIT, auto-approve off everywhere, resync the device |
+| SETTINGS | sounds, feedback sounds, how loud the BLOCKED alert is, nag while blocked (alert again every 2 / 5 / 10 min), desktop notifications, follow the blocked (the selection jumps to an agent when it blocks), focus-on-EDIT, auto-approve off everywhere, resync the device |
 | HELP | the control list above, on the device |
+| ABOUT | the ABOUT page (firmware 0.6; a text version on older firmware) |
+
+**The screen** (firmware 0.6) uses colour for state everywhere: amber is
+waiting on you, green is finished, red is broken, white is working, grey
+is at rest.
+
+- The **header** carries a small logo whose nine pads are the first nine
+  slots in their state colours, the page name with a five-segment page
+  indicator, a host light, and a chip per state with its count.
+- A **GRID row** is a state-coloured edge, the slot number, a state icon
+  (a spinner while working, a blinking warning sign while blocked, a
+  tick, a cross), the name, a two-letter kind tag in the agent's colour
+  (`CL` `CX` `OC` `GK` `CP` `SH`), time in state, the flags (`A` auto,
+  `R` repeat, `+` marked, `Q` queue) and the context gauge. The selected
+  row is a highlighted band.
+- **GRID as boxes** (HOME again on the GRID; remembered across power
+  cycles): a tile per agent, filled in its state's colour — amber and
+  pulsing while it waits on you, green when finished, red when broken —
+  with its name, icon, kind, time in state and context bar. The tiles
+  resize with the deck: four big ones for a few agents, down to all 27
+  keys of the page at once; free keys are outlines.
+- **DETAIL** shows the state as a pill, the kind, the context bar and a
+  tag for the INFO / DIFF views; the text is coloured by what it is
+  (`LABEL:` prefixes, added lines green, prompts white).
+- **APPROVALS** shows a large tick and ALL CLEAR when nobody is waiting.
+- An empty deck shows the logo and what to do next; a power-on splash
+  shows the logo and firmware version; footer messages get a tinted band.
+- **ABOUT** (the fifth page, or MENU → ABOUT): firmware and protocol
+  version, the package identity, whether a host is connected and which
+  protocol it speaks, the daemon's version and backend, agents in use,
+  uptime, and the computer's OS and Python.
+
+**The prompt queue.** Each agent has one. A prompt sent to a BLOCKED
+agent waits in it (answer the agent first; the prompt follows by itself),
+and with `"queue_when_working": true` so does a prompt sent mid-turn. A
+preset can also be a **pipeline** — `{"label": "test > review > commit",
+"steps": [...]}` — whose steps go out one per finished turn; the queue
+pauses while the agent is BLOCKED or in ERROR. INFO lists what is queued,
+and MENU → THIS AGENT clears it.
+
+**Auto-approve has limits.** Before ARP's auto-approve answers a prompt,
+the daemon checks what the agent wants to run, and the prompt on screen,
+against `auto_never` — by default `rm -r`/`-f`, `git push`,
+`git reset --hard`, `sudo`, `--force`, `drop table`, `mkfs`/`dd`. On a
+match it does not answer: the deck sounds the alert and says
+`AUTO HELD api: YOU DECIDE`. It is a pattern match on text, not a
+sandbox — a risky command phrased another way gets through — so keep
+auto-approve for agents whose worst case you can live with.
 
 **The INFO view** of DETAIL (firmware 0.3+) answers "what is this one
 doing?" without reading its scrollback. For Claude Code agents the daemon
@@ -375,7 +436,8 @@ Each GRID row shows how long the agent has been in its state.
 The footer, chimes, K1/K4 and the auto-approve marker need **firmware
 0.2**, the chords, the MENU page and the INFO toggle **0.3**, the `R`
 marker and the lit SEQ / LFO / blinking SAVE **0.4**, the `+` marker,
-the context gauges and the new sounds **0.5**; an older unit gets every
+the context gauges and the new sounds **0.5**, the `Q` marker and the
+INFO / DIFF tag on DETAIL, the colour screens and the ABOUT page **0.6**; an older unit gets every
 other control above (chord buttons then act at once, on press).
 
 The four screen pages: **GRID** (every agent as a labelled strip with its
@@ -416,11 +478,14 @@ keeps its default.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `presets` | 8 built-ins (`continue`, run tests + fix, summarize, review changes, commit, explain blocker, `/compact`, `/clear`) | the prompts PRESETS arms and SEQ sends: a string, or `{"label": …, "text": …}` |
+| `presets` | 9 built-ins (`continue`, run tests + fix, summarize, review changes, commit, explain blocker, the test > review > commit pipeline, `/compact`, `/clear`) | the prompts PRESETS arms and SEQ sends: a string, `{"label": …, "text": …}`, or a pipeline `{"label": …, "steps": [ … ]}` |
 | `default_agent` | `claude` | what PLAY starts on an empty slot |
 | `agents` | `claude`, `codex`, `opencode`, `grok`, `copilot` | shell command per agent kind (add flags here) |
 | `spawn_cwd` | `null` | where a spawned agent starts; `null` = the selected agent's directory |
 | `projects` | `[]` | extra directories offered by MENU → NEW AGENT |
+| `queue_when_working` | `false` | hold a prompt for a WORKING agent until its turn is over, instead of sending it mid-turn |
+| `auto_never` | see above | regular expressions (case-insensitive); auto-approve leaves a matching prompt to you. `[]` turns the check off |
+| `follow` | `false` | move the selection to an agent when it blocks |
 | `repeat_max` | `10` | repeat mode stops by itself after this many sends |
 | `nag_minutes` | `0` | chime again every N minutes while an agent stays BLOCKED (0 = off) |
 | `open_cmd` | `open` (macOS) / `xdg-open` | what MENU → THIS AGENT → OPEN FOLDER runs |
@@ -509,7 +574,7 @@ git clone --depth 1 --branch AC79NN_SDK_V1.2.1_2023-12-13 \
     https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git ~/fw-AC79_AIoT_SDK
 pip install mido python-rtmidi Pillow
 
-./build.sh --release 0.5                     # -> build/agentdeck-0.5.fwsc
+./build.sh --release 0.6                     # -> build/agentdeck-0.6.fwsc
 
 # host emulator test (no device, no toolchain): tests/agentdeck.txt
 # (generated by tools/gen_host_test.py; on macOS add '-Dsection(x)=' to cc)
@@ -581,7 +646,7 @@ that one line is the fix.
    use M-VAVE's M-UPGRADE updater (or a browser installer's
    "Return to official V15" option) if it shipped with V16.
 3. Flash Agent Deck over USB, using the package in `dist/`:
-   `python3 firmware-build/tools/fm1_install.py dist/agentdeck-0.5.fwsc`
+   `python3 firmware-build/tools/fm1_install.py dist/agentdeck-0.6.fwsc`
    (or the FM-1 Firmware Hub in Chrome/Edge). The installer asks before
    it writes; the FM-1 restarts into Agent Deck.
 4. Start the daemon (`--backend auto`), watch the FM-1 screen switch
@@ -657,7 +722,7 @@ menu-bar/status companion so the daemon can autostart.
 
 | Path | What |
 |---|---|
-| `PROTOCOL.md` | The wire spec (v5) |
+| `PROTOCOL.md` | The wire spec (v6) |
 | `host/agentdeck.py` | The daemon: Herdr + tmux backends, MIDI + simulate modes |
 | `host/test_simulate.sh` | End-to-end simulate test against real tmux panes |
 | `host/simulate-test.log` | Latest tmux test run — ALL PASS |
@@ -667,12 +732,12 @@ menu-bar/status companion so the daemon can autostart.
 | `firmware/screen-grid.png` | The GRID page as rendered by the host harness |
 | `tools/emu_test.py` | fm1-emu device test: boots the packaged `.fwsc`, injects daemon frames, walks the pages, snapshots the LCD |
 | `tools/get_emu.sh` | Fetches the fm1-emu release binary into `tools/fm1-emu-bin/` |
-| `docs/emu-grid.png` · `docs/emu-detail.png` · `docs/emu-approvals.png` · `docs/emu-menu.png` | The four pages as rendered by the packaged firmware in fm1-emu (`python3 tools/emu_test.py --out docs` regenerates them) |
+| `docs/emu-grid.png` · `docs/emu-detail.png` · `docs/emu-approvals.png` · `docs/emu-menu.png` · `docs/emu-about.png` · `docs/emu-boxes.png` | The five pages and the box view as rendered by the packaged firmware in fm1-emu (`python3 tools/emu_test.py --out docs` regenerates them) |
 | `docs/emu-demo.gif` | The emu session as an animation (GRID → DETAIL → APPROVALS), at the top of this README |
 | `docs/play/` | The self-hosted live player: vendored fm1-emu (MIT) + Agent Deck catalog + the auto-play demo script, served by GitHub Pages |
 | `docs/fm1-agent-deck-hero.jpg` | Hero image: an FM-1 (White and Blue) with the packaged firmware's fm1-emu GRID page composited into its screen |
 | `firmware-build/` | Dinghy tree + Agent Deck identity; `./build.sh` here |
-| `dist/agentdeck-0.5.fwsc` | The built firmware package, ready to flash (`-0.4` … `-0.1`: earlier releases; the web player still runs 0.1) |
+| `dist/agentdeck-0.6.fwsc` | The built firmware package, ready to flash (`-0.5` … `-0.1`: earlier releases; the web player still runs 0.1) |
 | `host/config.example.json` | Example daemon config (prompt presets, default agent) |
 | `tools/gen_host_test.py` | Generates the host-harness session `firmware-build/tests/agentdeck.txt` |
 

@@ -1,4 +1,4 @@
-# Agent Deck wire protocol v5
+# Agent Deck wire protocol v6
 
 How the FM-1 (running the Agent Deck firmware, a Dinghy fork) and the host
 daemon (`host/agentdeck.py`) talk. Everything runs over **USB-MIDI, channel 16**
@@ -11,8 +11,8 @@ what a knob does to an agent, which prompt preset is armed, when to chime,
 how far the detail text is scrolled. Only what must feel instant stays on
 the device: the selection cursor, the page, the LEDs, the per-slot clocks.
 
-v5 (firmware 0.5) is a superset of v4 (0.4), v3 (0.3), v2 (0.2) and v1
-(0.1); all
+v6 (firmware 0.6) is a superset of v5 (0.5), v4 (0.4), v3 (0.3), v2 (0.2)
+and v1 (0.1); all
 interoperate — see [Versioning](#versioning).
 
 ## Why channel messages, not SysEx
@@ -40,7 +40,7 @@ device at most ~2–4 Hz.
 | Note Off `0x8F` (or Note On vel 0) | note = 48 + key | Key released |
 | CC 102–115 | value 127 = down, 0 = up | Buttons. CC = 102 + button id (Dinghy `BTN_*`): 102 OCT−, 103 OCT+, 104 FX, 105 SEL, 106 ENV, 107 LFO, 108 EDIT, 109 GLO, 110 HOME, 111 SAVE, 112 ARP, 113 SEQ, 114 PLAY, 115 REC. Both edges are sent, so the host can treat any button as a held modifier |
 | CC 85–91 | relative: 65–127 = clockwise (value − 64 detents), 1–63 = counter-clockwise (64 − value detents), 64/0 = no-op | Encoders. 85 SELECT, 86 ALGORITHM, 87 K1, 88 K2, 89 K3, 90 K4, 91 PRESETS. SELECT moves the device's own cursor (reported as CC 120), so 85 is sent only where the host owns it: on the MENU page (v3), and always by v1, where the host ignores it |
-| CC 121 | value = page (0 GRID, 1 DETAIL, 2 APPROVALS, 3 MENU) | Page changed on the device, or the answer to a HELLO_ACK. *v3* |
+| CC 121 | value = page (0 GRID, 1 DETAIL, 2 APPROVALS, 3 MENU, 4 ABOUT in v6) | Page changed on the device, or the answer to a HELLO_ACK. *v3* |
 | CC 7 | absolute 0–127 | MASTER pot (device sends on change ≥ 2). It is the chime volume; the host ignores it |
 | CC 116 | value = protocol version (v1 sent a constant 1, which is its version) | Heartbeat, every 1000 ms. This is how a daemon started after the device learns what it is talking to |
 | CC 117 | value = protocol version | Hello, sent once at boot |
@@ -77,7 +77,8 @@ device at most ~2–4 Hz.
 | **SAVE held + key** | Chord (v3): move the selected agent to that slot (swap if taken); the host follows with a SELECT frame |
 | **LFO held + key** | Chord (v3): mark / unmark that slot's agent. While any are marked, the GLO-held actions apply to the marked agents only; GLO + LFO clears the marks |
 | **ARP held + key** | Chord (v3): toggle auto-approve on that slot's agent |
-| **HOME** while already on the GRID page | Select the agent that has waited longest (oldest BLOCKED, else ERROR, else DONE); the host follows with a SELECT frame |
+| **PLAY held + PRESETS** / **SEQ held + PRESETS** / **SEL held + K1** / **LFO held + K4** | An encoder turned while a chord button is held: choose the agent PLAY starts / set the repeat count / scroll DETAIL a page / step through the marked agents. The button then does nothing on release |
+| **GLO** while already on the APPROVALS page | Select the agent that has waited longest (oldest BLOCKED, else ERROR, else DONE); the host follows with a SELECT frame. (HOME while already on the GRID is the device's own: it flips the GRID between rows and boxes, v6) |
 | **K1** on the MENU page | Move the menu cursor a page (7 rows) at a time |
 | **SEQ held ≥ 0.7 s**, no key | Toggle repeat mode: the armed preset is re-sent each time the agent comes to rest |
 | **EDIT** on the DETAIL page | Cycle DETAIL through the agent's output, the host's INFO summary and its DIFF summary (the frames are the same DETAIL lines) |
@@ -103,14 +104,14 @@ Frame types:
 
 | Type | Name | Payload |
 |---|---|---|
-| 0x01 | SLOT | `[slot, state, kind, name…]` — slot 0–53, state = enum below, kind = agent-kind code below in the low 4 bits (v2: bit 6, `0x40`, set = the host is auto-approving this agent; v4: bit 5, `0x20`, set = repeat mode; v5: bit 4, `0x10`, set = in the marked group), then the agent's display name as ASCII (≤ 12 chars used on screen; ≤ 44 sent). State EMPTY with no name vacates the slot |
+| 0x01 | SLOT | `[slot, state, kind, name…]` — slot 0–53, state = enum below, kind = agent-kind code below in the low 3 bits (v2: bit 6, `0x40`, set = the host is auto-approving this agent; v4: bit 5, `0x20`, set = repeat mode; v5: bit 4, `0x10`, set = in the marked group; v6: bit 3, `0x08`, set = the host holds prompts queued for it), then the agent's display name as ASCII (≤ 12 chars used on screen; ≤ 44 sent). State EMPTY with no name vacates the slot |
 | 0x02 | DETAIL | `[line, text…]` — detail line for the *currently selected* agent (≤ 29 chars). The host sends a window of 6 lines (0–5) to a v2 device and scrolls it itself; 8 lines (0–7) to a v1 device, which scrolls locally. An empty text clears the line |
-| 0x03 | META | `[agent_count, blocked_count]` — header counts |
+| 0x03 | META | `[agent_count, blocked_count, view?]` — header counts; v6: an optional third byte says what the host is showing on DETAIL (0 output, 1 INFO, 2 DIFF), drawn as a tag on that page |
 | 0x04 | FOOTER | `[style, text…]` — the bottom line of every page (≤ 29 chars): the armed prompt preset, or a transient message (the result of an action, an agent that needs you). Style: 0 idle (grey), 1 info, 2 good, 3 warning, 4 error. The host times messages out by sending the next footer. *v2* |
 | 0x05 | BEEP | `[sound, gain?]` — play a sound: 1 attention, 2 done, 3 error, 4 ack (a click) *(v2)*; 5 heads-up, 6 tick, 7 up, 8 down, 9 alert (an agent became BLOCKED) *(v5)*. v5: an optional second byte is the loudness in 64ths (64 or absent = as written, 127 ≈ twice that). An older device ignores the gain and plays nothing for a sound it does not know, so the host sends it only 1–4 |
 | 0x06 | SELECT | `[slot]` — move the device's selection (and key page) to this slot; not echoed as CC 120. *v2* |
-| 0x07 | TEXT | `[line, style, text…]` — the MENU page: line 0 is its title, 1–7 its rows (≤ 29 chars). Style: the footer's 0–4, 5 cursor (bright), 6 plain text. *v3* |
-| 0x08 | PAGE | `[page]` — turn the device to this page; not echoed as CC 121. *v3* |
+| 0x07 | TEXT | `[line, style, text…]` — the MENU page: line 0 is its title, 1–7 its rows (≤ 29 chars); v6: lines 8 and 9 are the host's two lines on the ABOUT page (its version and backend, its system; ≤ 19 chars). Style: the footer's 0–4, 5 cursor (bright), 6 plain text. *v3* |
+| 0x08 | PAGE | `[page]` — turn the device to this page (0 GRID, 1 DETAIL, 2 APPROVALS, 3 MENU, 4 ABOUT *(v6)*); not echoed as CC 121. *v3* |
 | 0x09 | KEYLEDS | `[mode × up to 27]` — the host's lights for keys 0–26, shown only while a button is held: 0 off, 1 glow, 2 on, 3 blink. An empty frame gives the keys back. *v3* |
 | 0x0A | BTNLEDS | `[mode × up to 14]` — the host's lights for buttons 0–13 (the `BTN_*` ids): 0 the device decides, 1 off, 2 on, 3 blink, 4 glow. The host lights SEQ while the selected agent is on repeat and blinks SAVE when its prompt offers "don't ask again". *v4* |
 | 0x0B | GAUGE | `[slot, percent]` — how full that agent's context is, 0–100; 127 = unknown (no gauge). Drawn as a bar at the end of the slot's row and under DETAIL's status line. Cleared by an EMPTY SLOT frame. *v5* |
@@ -127,7 +128,7 @@ clocks survive. A v2 device shows `NO HOST` again after 25 s without a frame.
 
 A v1 device ignores frame types it does not know, so the host sends
 FOOTER/BEEP/SELECT/TEXT/PAGE/KEYLEDS/BTNLEDS regardless; it withholds only the SLOT flags an older
-device would misread as part of the kind (auto before v2, repeat before v4, mark before v5),
+device would misread as part of the kind (auto before v2, repeat before v4, mark before v5, queue before v6),
 GAUGE frames and the v5 sounds, and host-side scrolling.
 
 ### State enum
@@ -200,19 +201,22 @@ every chime at once.
 
 ## Versioning
 
-`PROTO_VERSION = 5` in both the firmware (`firmware/agentdeck.c`) and the
+`PROTO_VERSION = 6` in both the firmware (`firmware/agentdeck.c`) and the
 daemon (`host/agentdeck.py`). The device announces its version in the boot
 hello (CC 117) and in every heartbeat (CC 116); the host echoes its own in
 HELLO_ACK. Either side can be the older one:
 
-- **v5 daemon, v4 device (firmware 0.4):** everything but the `+` marker,
+- **v6 daemon, v5 device (firmware 0.5):** everything but the `Q` marker,
+  the INFO / DIFF tag on DETAIL and the ABOUT page (MENU → ABOUT shows a
+  text version instead). The colour screens are firmware 0.6's own.
+- **v6 daemon, v4 device (firmware 0.4):** as above, and without the `+` marker,
   the context gauges, the feedback sounds and the loud alert (a BLOCKED
   agent gets the attention chime three times instead).
-- **v5 daemon, v3 device (firmware 0.3):** as above, and without the `R`
+- **v6 daemon, v3 device (firmware 0.3):** as above, and without the `R`
   marker and the host's button lights (SEQ and LFO lit, SAVE blinking).
-- **v5 daemon, v2 device (firmware 0.2):** everything but the chords and
+- **v6 daemon, v2 device (firmware 0.2):** everything but the chords and
   the MENU page; REC/FX/ENV/SEQ/SEL act on press, as before.
-- **v5 daemon, v1 device (firmware 0.1):** every control still works —
+- **v6 daemon, v1 device (firmware 0.1):** every control still works —
   the device has always forwarded all of them. Missing are the things only
   new firmware can render: the footer line, the chimes, K4's jump (the
   device's cursor cannot be moved by the host), deep scrolling (K1 scrolls
