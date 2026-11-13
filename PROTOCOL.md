@@ -1,4 +1,4 @@
-# Agent Deck wire protocol v3
+# Agent Deck wire protocol v4
 
 How the FM-1 (running the Agent Deck firmware, a Dinghy fork) and the host
 daemon (`host/agentdeck.py`) talk. Everything runs over **USB-MIDI, channel 16**
@@ -11,8 +11,8 @@ what a knob does to an agent, which prompt preset is armed, when to chime,
 how far the detail text is scrolled. Only what must feel instant stays on
 the device: the selection cursor, the page, the LEDs, the per-slot clocks.
 
-v3 (firmware 0.3) is a superset of v2 (0.2), itself a superset of v1
-(0.1); all interoperate — see [Versioning](#versioning).
+v4 (firmware 0.4) is a superset of v3 (0.3), v2 (0.2) and v1 (0.1); all
+interoperate — see [Versioning](#versioning).
 
 ## Why channel messages, not SysEx
 
@@ -72,6 +72,10 @@ device at most ~2–4 Hz.
 | **REC / FX / ENV held + key** | Chord (v3): approve / deny / interrupt *that* slot's agent, selection unchanged |
 | **SEQ held + key N** | Chord (v3): send prompt preset N to the selected agent |
 | **SEL held + key N** | Chord (v3): type the digit N (1–9) — answer a numbered option |
+| **PLAY held + key** | Chord (v3): start / continue that slot's agent; on an empty slot, spawn one there |
+| **SAVE held + key** | Chord (v3): move the selected agent to that slot (swap if taken); the host follows with a SELECT frame |
+| **SEQ held ≥ 0.7 s**, no key | Toggle repeat mode: the armed preset is re-sent each time the agent comes to rest |
+| **EDIT** on the DETAIL page | Flip DETAIL between the agent's output and the host's INFO summary (the frames are the same DETAIL lines) |
 | **MENU page:** SELECT / SEL / FX | Move the menu cursor / pick / back (the host draws the page with TEXT frames) |
 
 A chord button acts on *release* when no key was tapped meanwhile (with a
@@ -94,7 +98,7 @@ Frame types:
 
 | Type | Name | Payload |
 |---|---|---|
-| 0x01 | SLOT | `[slot, state, kind, name…]` — slot 0–53, state = enum below, kind = agent-kind code below (v2: bit 6, `0x40`, set = the host is auto-approving this agent), then the agent's display name as ASCII (≤ 12 chars used on screen; ≤ 44 sent). State EMPTY with no name vacates the slot |
+| 0x01 | SLOT | `[slot, state, kind, name…]` — slot 0–53, state = enum below, kind = agent-kind code below in the low 5 bits (v2: bit 6, `0x40`, set = the host is auto-approving this agent; v4: bit 5, `0x20`, set = repeat mode), then the agent's display name as ASCII (≤ 12 chars used on screen; ≤ 44 sent). State EMPTY with no name vacates the slot |
 | 0x02 | DETAIL | `[line, text…]` — detail line for the *currently selected* agent (≤ 29 chars). The host sends a window of 6 lines (0–5) to a v2 device and scrolls it itself; 8 lines (0–7) to a v1 device, which scrolls locally. An empty text clears the line |
 | 0x03 | META | `[agent_count, blocked_count]` — header counts |
 | 0x04 | FOOTER | `[style, text…]` — the bottom line of every page (≤ 29 chars): the armed prompt preset, or a transient message (the result of an action, an agent that needs you). Style: 0 idle (grey), 1 info, 2 good, 3 warning, 4 error. The host times messages out by sending the next footer. *v2* |
@@ -103,6 +107,7 @@ Frame types:
 | 0x07 | TEXT | `[line, style, text…]` — the MENU page: line 0 is its title, 1–7 its rows (≤ 29 chars). Style: the footer's 0–4, 5 cursor (bright), 6 plain text. *v3* |
 | 0x08 | PAGE | `[page]` — turn the device to this page; not echoed as CC 121. *v3* |
 | 0x09 | KEYLEDS | `[mode × up to 27]` — the host's lights for keys 0–26, shown only while a button is held: 0 off, 1 glow, 2 on, 3 blink. An empty frame gives the keys back. *v3* |
+| 0x0A | BTNLEDS | `[mode × up to 14]` — the host's lights for buttons 0–13 (the `BTN_*` ids): 0 the device decides, 1 off, 2 on, 3 blink, 4 glow. The host lights SEQ while the selected agent is on repeat and blinks SAVE when its prompt offers "don't ask again". *v4* |
 | 0x0F | HELLO_ACK | `[proto_version]` — host is alive; the device shows `HOST OK` (v2: and answers with CC 120; v3: and CC 121) |
 
 Per refresh cycle (1 s, sooner after an action or a Herdr event) the host
@@ -115,8 +120,8 @@ says hello or the daemon starts — not periodically, so the device's per-slot
 clocks survive. A v2 device shows `NO HOST` again after 25 s without a frame.
 
 A v1 device ignores frame types it does not know, so the host sends
-FOOTER/BEEP/SELECT/TEXT/PAGE/KEYLEDS regardless; it withholds only the SLOT auto flag (v1
-would misread the kind) and host-side scrolling.
+FOOTER/BEEP/SELECT/TEXT/PAGE/KEYLEDS/BTNLEDS regardless; it withholds only the SLOT flags an older
+device would misread as part of the kind (auto before v2, repeat before v4) and host-side scrolling.
 
 ### State enum
 
@@ -162,7 +167,8 @@ agent is auto-approved, HOME/EDIT/GLO lit on their page.
   selection): slot number, state glyph (`-` EMPTY, `.` IDLE, `>` WORKING,
   `!` BLOCKED, `*` DONE, `x` ERROR, `?` UNKNOWN), name, how long the agent
   has been in that state (`7s`, `42m`, `13h` — counted on the device from
-  the SLOT frame that changed it), and `A` if auto-approved. Selected row
+  the SLOT frame that changed it), `A` if auto-approved and `R` if on
+  repeat. Selected row
   is prefixed with `>` cursor and drawn bright.
 - **DETAIL page**: selected agent's name, state, kind and time in state,
   then 6 detail lines (K1 scrolls, via the host).
@@ -183,14 +189,16 @@ every chime at once.
 
 ## Versioning
 
-`PROTO_VERSION = 3` in both the firmware (`firmware/agentdeck.c`) and the
+`PROTO_VERSION = 4` in both the firmware (`firmware/agentdeck.c`) and the
 daemon (`host/agentdeck.py`). The device announces its version in the boot
 hello (CC 117) and in every heartbeat (CC 116); the host echoes its own in
 HELLO_ACK. Either side can be the older one:
 
-- **v3 daemon, v2 device (firmware 0.2):** everything but the chords and
+- **v4 daemon, v3 device (firmware 0.3):** everything but the `R` marker
+  and the host's button lights (SEQ lit, SAVE blinking).
+- **v4 daemon, v2 device (firmware 0.2):** everything but the chords and
   the MENU page; REC/FX/ENV/SEQ/SEL act on press, as before.
-- **v3 daemon, v1 device (firmware 0.1):** every control still works —
+- **v4 daemon, v1 device (firmware 0.1):** every control still works —
   the device has always forwarded all of them. Missing are the things only
   new firmware can render: the footer line, the chimes, K4's jump (the
   device's cursor cannot be moved by the host), deep scrolling (K1 scrolls
