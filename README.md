@@ -9,7 +9,7 @@ running on your computer.
 *What the animation is: a picture of the FM-1 (White and Blue colorway) with
 Agent Deck's screen playing in its display — a visualization, not a
 video of the author's unit. The screen content is not a mockup: every
-frame is the LCD of firmware 0.6.2, captured from the shipped package
+frame is the LCD of firmware 0.6.3, captured from the shipped package
 running in [fm1-emu](#see-it-running--fm1-emu) and set into the display
 pixel for pixel. The firmware runs on a real FM-1 today; footage of it
 has yet to replace this. Each screen is shown full size in
@@ -19,7 +19,7 @@ has yet to replace this. Each screen is shown full size in
 — a firmware package running in **fm1-emu** on this project's own player
 page. One click on **Start** and it plays a scripted session by itself:
 daemon frames in, the GRID as a list and as boxes, every page walked.
-It is the same firmware 0.6.2 package as on the unit. A one-page
+It is the current firmware package, 0.6.3. A one-page
 **[cheat sheet](https://kevinelliott.github.io/fm-1-agent-deck/cheatsheet.html)**
 has the controls.
 (Device-only view for embedding elsewhere:
@@ -73,11 +73,14 @@ empty key, hold REC and tap every blinking key to clear a row of approvals,
 and let the deck chime when someone needs you.
 
 > **Status (Nov 2026):** running on real hardware. **Firmware 0.6.2**
-> (protocol v6), the newest package (`dist/agentdeck-0.6.2.fwsc`), is
-> installed on the author's FM-1 — flashed over USB with the installer in
-> this repo, as every release from 0.1 on was before it — and driven
-> there by the daemon against a live Herdr session. Every package is
-> built with the JieLi toolchain and booted in
+> (protocol v6) is installed on the author's FM-1 — flashed over USB with
+> the installer in this repo, as every release from 0.1 on was before it
+> — and driven there by the daemon against a live Herdr session. The
+> newest package, **0.6.3** (`dist/agentdeck-0.6.3.fwsc`), is the same
+> firmware apart from its version text, and the first one **built and
+> signed on GitHub** from this source (see
+> [Signed releases](#signed-releases)); it has run in the emulator, not
+> yet on the unit. Every package is booted in
 > [fm1-emu](https://github.com/joakimeriksson/fm1-emu), the chip-level
 > FM-1 emulator, before it goes anywhere near the unit.
 > Still young: the features have had far more emulator and simulate-mode
@@ -104,7 +107,7 @@ and let the deck chime when someone needs you.
 
 Colour means state everywhere: **amber** is waiting on you, **green** is
 finished, **red** is broken, **white** is working, **grey** is at rest.
-Every image here is the LCD of `dist/agentdeck-0.6.2.fwsc` running in
+Every image here is the LCD of `dist/agentdeck-0.6.3.fwsc` running in
 fm1-emu, fed the frames the daemon sends; the fleet of eight agents is
 made up for the pictures, the pixels are not.
 [`tools/emu_shots.py`](tools/emu_shots.py) regenerates all of them.
@@ -115,7 +118,7 @@ to do next.
 
 | Power-on | No daemon yet | Host connected, no agents |
 |---|---|---|
-| ![Splash: the nine-pad logo, AGENT DECK, firmware 0.6.2](docs/shot-splash.png) | ![Waiting for the host: NO HOST in the header, and the command to run on the computer](docs/shot-no-host.png) | ![No agents yet: pick a key, press PLAY, or start one in a terminal](docs/shot-empty.png) |
+| ![Splash: the nine-pad logo, AGENT DECK, firmware 0.6.3](docs/shot-splash.png) | ![Waiting for the host: NO HOST in the header, and the command to run on the computer](docs/shot-no-host.png) | ![No agents yet: pick a key, press PLAY, or start one in a terminal](docs/shot-empty.png) |
 
 **GRID** — the fleet. The header carries a logo whose nine pads are the
 first nine slots in their state colours, the page name, a five-segment
@@ -179,7 +182,7 @@ chip itself (both CPU cores, screen, keys, encoders, MIDI), so firmware
 packages run in it *unchanged* — the same `.fwsc` you would flash.
 
 The screens in [the tour](#a-tour-of-the-screens) come from there: the
-LCD of `dist/agentdeck-0.6.2.fwsc` booted in fm1-emu and fed the frame
+LCD of `dist/agentdeck-0.6.3.fwsc` booted in fm1-emu and fed the frame
 stream the daemon sends (injected through the FM-1's MIDI IN jack, which
 the firmware's platform merges into the same queue as USB MIDI). Two
 scripts drive it:
@@ -203,7 +206,7 @@ emulator's audio thread is what starts it) and it plays a scripted
 session by itself; afterwards the panel is yours — click the keys, turn
 the ALGORITHM knob, open the picker. A plain visit (no `script=`)
 boots the deck to `NO HOST`: it is a controller, and it wants its
-daemon. The player carries the current package (0.6.2); the session is
+daemon. The player carries the current package (0.6.3); the session is
 written by `python3 tools/emu_shots.py --player`.
 
 **Embed it on a site:** the player supports fm1-emu's embed mode —
@@ -218,7 +221,7 @@ this iframe windows just the device, auto-playing the demo:
 (Adjust the size to taste. GitHub renders no iframes in READMEs, which
 is why this page carries captures and a link instead.) You can also run the deck on the upstream
 [fm1-emu page](https://joakimeriksson.github.io/fm1-emu/): download
-[`dist/agentdeck-0.6.2.fwsc`](dist/agentdeck-0.6.2.fwsc), choose
+[`dist/agentdeck-0.6.3.fwsc`](dist/agentdeck-0.6.3.fwsc), choose
 **Open .fwsc…** there, and press **Start**.
 
 **Run it natively:** `tools/get_emu.sh` fetches the fm1-emu release
@@ -532,6 +535,7 @@ buttons act at once, on press).
 | 0.6 | the colour screens, the box view, the ABOUT page, the `Q` marker, the INFO / DIFF tag on DETAIL |
 | 0.6.1 | the box view's context gauge on the tile's right edge |
 | 0.6.2 | no new controls: its own package identity (`FM-1_2435N`) and USB name (`FM-1 AGTDECK`) |
+| 0.6.3 | nothing in the firmware: the first package built and signed on GitHub |
 
 The five screen pages, in ALGORITHM order: **GRID** (every agent, as a
 list or as boxes), **DETAIL** (the selected agent plus six lines of its
@@ -668,7 +672,7 @@ git clone --depth 1 --branch AC79NN_SDK_V1.2.1_2023-12-13 \
     https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git ~/fw-AC79_AIoT_SDK
 pip install mido python-rtmidi Pillow
 
-./build.sh --release 0.6.2                   # -> build/agentdeck-0.6.2.fwsc
+./build.sh --release 0.6.3                   # -> build/agentdeck-0.6.3.fwsc
 
 # host emulator test (no device, no toolchain): tests/agentdeck.txt
 # (generated by tools/gen_host_test.py; on macOS add '-Dsection(x)=' to cc)
@@ -693,7 +697,7 @@ Name scenes to redo just those (`tools/emu_shots.py grid about`);
 Verified 2026-11-08 (firmware 0.1): the device build passes all of
 Dinghy's checks, the `.fwsc` parses under the installer's own
 `load_package` (CRCs OK), and the emulator output is in
-`firmware/host-test.log`. As of 0.6.2 (2026-11-13) the build still
+`firmware/host-test.log`. As of 0.6.3 (2026-11-13) the build still
 passes those checks at 65,292 B of 581,564 for the image and 18,432 B
 of 98,304 of RAM. One emulator quirk worth knowing: the host
 harness stubs `fm1_input_note_edges()` to 0, so the firmware diffs
@@ -710,6 +714,30 @@ project's on-device test stand-in: the host harness above stays the
 fast inner loop for logic, but anything that touches boot, screen,
 panel or protocol is only "tested" once it has run as a package in
 fm1-emu.
+
+## Signed releases
+
+From 0.6.3 on, the package on a release is not built on anyone's
+computer. Pushing a version tag runs
+[`.github/workflows/release.yml`](.github/workflows/release.yml), which
+hands this repository to The Firmware Hub's shared
+[fm1-build](https://github.com/zvenson/fm1-build) workflow: GitHub
+checks out the tagged commit, fetches the JieLi toolchain and SDK, runs
+`firmware-build/build.sh --release <version>`, signs a build attestation
+for the `.fwsc` and publishes it as the release. Anyone can check that a
+package is exactly what that commit builds:
+
+```sh
+gh attestation verify agentdeck-0.6.3.fwsc --repo kevinelliott/fm-1-agent-deck \
+  --signer-workflow zvenson/fm1-build/.github/workflows/build.yml
+```
+
+The build is reproducible: the same command in a clean clone on the
+author's Mac gave a byte-identical 0.6.3 package. To release, push a tag
+(`git tag v0.6.4 && git push origin v0.6.4`) and leave the file on the
+release alone — a package uploaded or rebuilt by hand loses the
+signature. The signature says where the file came from, not that the
+firmware is safe.
 
 ## Arrival day (read this before plugging anything in)
 
@@ -752,7 +780,7 @@ that one line is the fix.
    use M-VAVE's M-UPGRADE updater (or a browser installer's
    "Return to official V15" option) if it shipped with V16.
 3. Flash Agent Deck over USB, using the package in `dist/`:
-   `python3 firmware-build/tools/fm1_install.py dist/agentdeck-0.6.2.fwsc`
+   `python3 firmware-build/tools/fm1_install.py dist/agentdeck-0.6.3.fwsc`
    (or the FM-1 Firmware Hub in Chrome/Edge). The installer asks before
    it writes; the FM-1 restarts into Agent Deck.
 4. Start the daemon (`--backend auto`), watch the FM-1 screen switch
@@ -831,6 +859,7 @@ menu-bar/status companion so the daemon can autostart.
 |---|---|
 | `PROTOCOL.md` | The wire spec (v6) |
 | `LICENSE` | GPL-3.0 |
+| `.github/workflows/release.yml` | Builds, signs and publishes the package when a version tag is pushed |
 | `fmhub.json` · `docs/card.png` | The card text, links and picture for [The Firmware Hub](https://thefirmwarehub.com/) |
 | `docs/cheatsheet.html` | The controls on one page, served by GitHub Pages |
 | `host/agentdeck.py` | The daemon: Herdr + tmux backends, MIDI + simulate modes |
@@ -848,7 +877,7 @@ menu-bar/status companion so the daemon can autostart.
 | `docs/play/` | The self-hosted live player: vendored fm1-emu (MIT) + Agent Deck catalog + the auto-play demo script, served by GitHub Pages |
 | `docs/fm1-agent-deck-hero.jpg` | The FM-1 picture (White and Blue) the animation is built on, with the GRID page in its display |
 | `firmware-build/` | Dinghy tree + Agent Deck identity; `./build.sh` here |
-| `dist/agentdeck-0.6.2.fwsc` | The built firmware package, ready to flash, and the one installed on the author's FM-1 (`-0.6.1` … `-0.1`: earlier releases) |
+| `dist/agentdeck-0.6.3.fwsc` | The firmware package, ready to flash: a copy of the signed file on the `v0.6.3` release. `-0.6.2` is the one installed on the author's FM-1; `-0.6.1` … `-0.1` are earlier releases |
 | `host/config.example.json` | Example daemon config (prompt presets, default agent) |
 | `tools/gen_host_test.py` | Generates the host-harness session `firmware-build/tests/agentdeck.txt` |
 

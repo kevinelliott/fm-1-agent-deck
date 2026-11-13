@@ -40,6 +40,6 @@ Local changes versus upstream, deliberately minimal:
 To refresh the player: download the same file list from the upstream
 site again, re-apply the two changes above, and re-check the demo.
 
-`agentdeck-0.6.2.fwsc` is a copy of `../../dist/agentdeck-0.6.2.fwsc` —
+`agentdeck-0.6.3.fwsc` is a copy of `../../dist/agentdeck-0.6.3.fwsc` —
 refresh it when the firmware version changes (and update
 `firmwares.json`'s version field to match).
