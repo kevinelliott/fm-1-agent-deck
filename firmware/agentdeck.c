@@ -5,7 +5,7 @@
  * LICENSING.md in the Dinghy tree). The synth engine is gone; the only
  * sound left is a handful of alert chimes the host asks for. The panel
  * talks to a host daemon (host/agentdeck.py) over USB-MIDI channel 16; the
- * wire format is PROTOCOL.md in this project (this is protocol v4). In short:
+ * wire format is PROTOCOL.md in this project (this is protocol v5). In short:
  *
  *   out: keys = Note On/Off 48..74 (a press also selects the slot),
  *        buttons = CC 102..115, encoders = CC 85..91 (relative),
@@ -17,7 +17,7 @@
  *        0x20 end, 0x7F reset), CC 119 = one payload byte. SysEx never
  *        reaches an app in this platform (the updater owns it), hence CCs.
  *        Frames: SLOT, DETAIL, META, FOOTER, BEEP, SELECT, TEXT, PAGE,
- *        KEYLEDS, BTNLEDS, HELLO_ACK.
+ *        KEYLEDS, BTNLEDS, GAUGE, HELLO_ACK.
  *
  * The device is deliberately dumb: the host owns everything that needs
  * judgement (what a knob does to an agent, which prompt is armed, when to
@@ -60,19 +60,33 @@ static const tone_t PAT_DONE[] = {              /* an agent finished: C E G */
 static const tone_t PAT_ERROR[] = {             /* something broke: two low notes */
     {19088744u, 7056, 435}, {0, 2646, 0}, {19088744u, 11466, 267}, {0, 0, 0}};
 static const tone_t PAT_ACK[] = {{152709948u, 1544, 1989}, {0, 0, 0}};   /* a click: done as told */
-static const tone_t *const PATTERNS[4] = {PAT_ATTENTION, PAT_DONE, PAT_ERROR, PAT_ACK};
+static const tone_t PAT_WARN[] = {              /* heads up, no hurry: one note, twice */
+    {64278423u, 2646, 1161}, {0, 1764, 0}, {64278423u, 2646, 1161}, {0, 0, 0}};
+static const tone_t PAT_TICK[] = {{194783100u, 441, 6965}, {0, 0, 0}};   /* feedback: a control moved */
+static const tone_t PAT_UP[] = {                /* feedback: sent / approved */
+    {85704563u, 1764, 1741}, {114435070u, 1764, 1741}, {0, 0, 0}};
+static const tone_t PAT_DOWN[] = {              /* feedback: denied / stopped */
+    {114435070u, 1764, 1741}, {85704563u, 1764, 1741}, {0, 0, 0}};
+static const tone_t PAT_ALERT[] = {             /* an agent is BLOCKED: three rising calls, thrice */
+    {85704563u, 3528, 870}, {114435070u, 3528, 870}, {152709948u, 3528, 870}, {0, 3528, 0},
+    {85704563u, 3528, 870}, {114435070u, 3528, 870}, {152709948u, 3528, 870}, {0, 3528, 0},
+    {85704563u, 3528, 870}, {114435070u, 3528, 870}, {152709948u, 10584, 290}, {0, 0, 0}};
+#define NPATTERNS 9u
+static const tone_t *const PATTERNS[NPATTERNS] = {PAT_ATTENTION, PAT_DONE, PAT_ERROR, PAT_ACK, PAT_WARN,
+                                                  PAT_TICK, PAT_UP, PAT_DOWN, PAT_ALERT};
 static volatile uint32_t beep_seq;
-static volatile uint8_t beep_id;
+static volatile uint8_t beep_id, beep_gain = 64;   /* gain in 64ths: 64 is as written, 127 twice that */
 
 static void app_audio(int32_t *out, uint32_t n)
 {
     static const tone_t *tn;
-    static uint32_t seen, ph, inc, env, dec, left;
+    static uint32_t seen, ph, inc, env, dec, left, gain = 64;
     uint32_t i;
     if (beep_seq != seen) {
         uint32_t id = beep_id;
         seen = beep_seq;
-        tn = id >= 1u && id <= 4u ? PATTERNS[id - 1u] : 0;
+        tn = id >= 1u && id <= NPATTERNS ? PATTERNS[id - 1u] : 0;
+        gain = beep_gain;
         left = 0;
     }
     if (!tn && !left) return;
@@ -92,6 +106,7 @@ static void app_audio(int32_t *out, uint32_t n)
             if (t < 0) t = -t;
             t = 2 * t - 16384;
             v = t * (int32_t)(env >> 8) / 16384;
+            v = v * (int32_t)gain / 64;
             out[2u * i] += v;
             out[2u * i + 1u] += v;
             env = env > dec ? env - dec : 0u;
@@ -100,7 +115,7 @@ static void app_audio(int32_t *out, uint32_t n)
 }
 
 /* ---- protocol (PROTOCOL.md) */
-#define PROTO_VER 4u
+#define PROTO_VER 5u
 #define CH16 0x0Fu                              /* channel 16, as a status low nibble */
 #define ST_NOTEON 0x9Fu
 #define ST_NOTEOFF 0x8Fu
@@ -123,9 +138,12 @@ static void app_audio(int32_t *out, uint32_t n)
 #define FT_PAGE 0x08u
 #define FT_KEYLEDS 0x09u
 #define FT_BTNLEDS 0x0Au
+#define FT_GAUGE 0x0Bu
 #define FT_HELLO_ACK 0x0Fu
 #define KIND_AUTO 0x40u                         /* SLOT's kind byte: the host auto-approves this agent */
 #define KIND_LOOP 0x20u                         /* ... and: the host repeats a prompt at it */
+#define KIND_MARK 0x10u                         /* ... and: it is in the marked group */
+#define GAUGE_NONE 0x7Fu
 
 #define MAXSLOTS 54u                            /* two key-pages of 27 */
 #define NAME_CHARS 12u
@@ -148,6 +166,8 @@ static uint8_t slot_state[MAXSLOTS];
 static uint8_t slot_kind[MAXSLOTS];
 static uint8_t slot_auto[MAXSLOTS];
 static uint8_t slot_loop[MAXSLOTS];
+static uint8_t slot_mark[MAXSLOTS];
+static uint8_t slot_gauge[MAXSLOTS];             /* 0..100: how full its context is; GAUGE_NONE: unknown */
 static char slot_name[MAXSLOTS][NAME_CHARS + 1u];
 static uint32_t slot_since[MAXSLOTS];           /* fm1_ms when the state last changed */
 static char detail[DETAIL_LINES][DETAIL_CHARS + 1u];
@@ -178,6 +198,8 @@ static void slots_clear(void)
         slot_kind[i] = 0;
         slot_auto[i] = 0;
         slot_loop[i] = 0;
+        slot_mark[i] = 0;
+        slot_gauge[i] = GAUGE_NONE;
         for (j = 0; j <= NAME_CHARS; j++) slot_name[i][j] = 0;
     }
     for (i = 0; i < DETAIL_LINES; i++) detail[i][0] = 0;
@@ -209,11 +231,13 @@ static void rx_commit(void)
         uint32_t s = rx_buf[0];
         if (s < MAXSLOTS) {
             uint8_t st = rx_buf[1] <= S_UNKNOWN ? rx_buf[1] : S_UNKNOWN;
-            uint8_t kind = rx_buf[2] & 0x1Fu;
+            uint8_t kind = rx_buf[2] & 0x0Fu;
             if (st != slot_state[s]) slot_since[s] = fm1_ms;
             slot_state[s] = st;
             slot_auto[s] = (rx_buf[2] & KIND_AUTO) != 0u;
             slot_loop[s] = (rx_buf[2] & KIND_LOOP) != 0u;
+            slot_mark[s] = (rx_buf[2] & KIND_MARK) != 0u;
+            if (st == S_EMPTY) slot_gauge[s] = GAUGE_NONE;
             slot_kind[s] = kind <= 6u ? kind : 0u;
             rx_text(slot_name[s], NAME_CHARS, 3u);
         }
@@ -227,6 +251,7 @@ static void rx_commit(void)
         rx_text(footer, FOOTER_CHARS, 1u);
     } else if (rx_type == FT_BEEP && rx_len >= 1u) {
         beep_id = rx_buf[0];
+        beep_gain = rx_len >= 2u && rx_buf[1] ? rx_buf[1] : 64u;   /* v5: an optional loudness */
         beep_seq++;
     } else if (rx_type == FT_SELECT && rx_len >= 1u) {
         if (rx_buf[0] < MAXSLOTS && rx_buf[0] != sel_slot) {   /* the host moves the cursor: no echo */
@@ -252,6 +277,8 @@ static void rx_commit(void)
     } else if (rx_type == FT_BTNLEDS) {
         uint32_t i;
         for (i = 0; i < 14u; i++) bled[i] = i < rx_len ? rx_buf[i] : 0u;
+    } else if (rx_type == FT_GAUGE && rx_len >= 2u) {
+        if (rx_buf[0] < MAXSLOTS) slot_gauge[rx_buf[0]] = rx_buf[1] <= 100u ? rx_buf[1] : GAUGE_NONE;
     } else if (rx_type == FT_HELLO_ACK) {
         announce_sel = 1;                       /* a host arrived: tell it where the cursor is */
         announce_page = 1;
@@ -343,6 +370,11 @@ static void draw_header(void)
     draw_text_box(0, 38, 240, &FONT_S, s, meta_blocked ? C_WARN : C_GREY, 1);
 }
 
+static uint16_t gauge_colour(uint32_t pct)
+{
+    return pct >= 85u ? C_BAD : pct >= 60u ? C_WARN : C_ACC;
+}
+
 static void draw_row(int32_t y, uint32_t slot, int32_t selected)
 {
     char s[40], *p = s;
@@ -361,9 +393,15 @@ static void draw_row(int32_t y, uint32_t slot, int32_t selected)
         *p++ = ' ';
         *p++ = slot_auto[slot] ? 'A' : ' ';
         *p++ = slot_loop[slot] ? 'R' : ' ';
+        *p++ = slot_mark[slot] ? '+' : ' ';
     }
     *p = 0;
     cv_text(4, y, &FONT_S, s, selected ? C_WHITE : state_colour(slot_state[slot]));
+    if (slot_state[slot] != S_EMPTY && slot_gauge[slot] <= 100u) {   /* context: a bar that fills upward */
+        int32_t h = (int32_t)(slot_gauge[slot] * 14u + 99u) / 100;
+        cv_rect(229, y + 1, 6, 14, C_RULE);
+        if (h > 0) cv_rect(229, y + 15 - h, 6, h, gauge_colour(slot_gauge[slot]));
+    }
 }
 
 static uint16_t style_colour(uint8_t st)
@@ -401,6 +439,10 @@ static void draw_content(void)
         }
         *p = 0;
         cv_text(4, 18, &FONT_S, s, state_colour(slot_state[sel_slot]));
+        if (slot_state[sel_slot] != S_EMPTY && slot_gauge[sel_slot] <= 100u) {
+            cv_rect(4, 36, 232, 2, C_RULE);
+            cv_rect(4, 36, (int32_t)(slot_gauge[sel_slot] * 232u / 100u), 2, gauge_colour(slot_gauge[sel_slot]));
+        }
         for (i = 0; i < DETAIL_SHOWN; i++)
             cv_text(4, 40 + (int32_t)i * 20, &FONT_S, detail[i], C_TXT);
     } else if (page == PAGE_MENU) {             /* the host's page: a title and seven rows */

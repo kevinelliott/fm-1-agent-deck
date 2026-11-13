@@ -4,7 +4,7 @@
 The harness (firmware-build/tests/host.c) replays a script of timed panel
 and MIDI events against the natively compiled app. Frames are tedious to
 write by hand as one CC per line, so this builds the script from the same
-frame helpers the daemon uses (protocol v4: PROTOCOL.md).
+frame helpers the daemon uses (protocol v5: PROTOCOL.md).
 
 The session: a host says hello and syncs three agents (one auto-approved,
 one blocked), sets a footer, asks for the attention chime, moves the
@@ -23,9 +23,9 @@ OUT = os.path.join(ROOT, "firmware-build", "tests", "agentdeck.txt")
 
 CC_CTRL, CC_DATA = 118, 119
 FT_SLOT, FT_DETAIL, FT_META, FT_FOOTER, FT_BEEP, FT_SELECT, FT_TEXT, \
-    FT_PAGE, FT_KEYLEDS, FT_BTNLEDS, FT_HELLO_ACK = \
-    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0F
-KIND_AUTO, KIND_LOOP = 0x40, 0x20
+    FT_PAGE, FT_KEYLEDS, FT_BTNLEDS, FT_GAUGE, FT_HELLO_ACK = \
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0F
+KIND_AUTO, KIND_LOOP, KIND_MARK = 0x40, 0x20, 0x10
 BTN = {"OCT-": 0, "OCT+": 1, "FX": 2, "SEL": 3, "ENV": 4, "LFO": 5, "EDIT": 6,
        "GLO": 7, "HOME": 8, "SAVE": 9, "ARP": 10, "SEQ": 11, "PLAY": 12,
        "REC": 13}
@@ -57,11 +57,13 @@ def at(ms, text):
 
 
 cc(CC_CTRL, 0x7F)                                        # RESET
-frame(FT_HELLO_ACK, [4])
+frame(FT_HELLO_ACK, [5])
 frame(FT_META, [3, 1])
 frame(FT_SLOT, bytes([0, 2, 1 | KIND_AUTO | KIND_LOOP]) + b"api-server")   # WORKING claude, auto + loop
 frame(FT_BTNLEDS, [0] * 9 + [3, 0, 2])                  # SAVE blinks, SEQ lit (v4)
-frame(FT_SLOT, bytes([1, 3, 2]) + b"web-frontend")              # BLOCKED codex
+frame(FT_SLOT, bytes([1, 3, 2 | KIND_MARK]) + b"web-frontend")  # BLOCKED codex, marked (v5)
+frame(FT_GAUGE, [0, 42])                                # context gauges (v5)
+frame(FT_GAUGE, [1, 91])
 frame(FT_SLOT, bytes([2, 4, 1]) + b"docs")                      # DONE claude
 for i, line in enumerate(["Edit host/agentdeck.py",
                           "  + def approve_always(self):",
@@ -89,6 +91,13 @@ at(t + 100, "enc %d -1" % ENC["SELECT"])                 # local move -> CC 120
 at(t + 100, "btn %d" % BTN["HOME"])
 at(t + 1200, "shot")
 frame(FT_BEEP, [3])                                      # error chime
+frame(FT_BEEP, [5])                                      # heads-up chime (v5)
+at(t + 400, "shot")
+frame(FT_BEEP, [6, 24])                                  # v5: a quiet tick,
+at(t + 150, "shot")
+frame(FT_BEEP, [7, 32])                                  # a soft "sent",
+at(t + 250, "shot")
+frame(FT_BEEP, [9, 110])                                 # and the loud BLOCKED alert
 # v3: a chord (REC held + key 1: the note goes out, the cursor stays) under
 # the host's key lights, then the MENU page, written and opened by the host
 at(t + 900, "btndown %d" % BTN["REC"])
