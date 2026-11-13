@@ -51,8 +51,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CC_CTRL, CC_DATA = 118, 119
 FT_SLOT, FT_DETAIL, FT_META, FT_FOOTER, FT_BEEP, FT_TEXT, FT_BTNLEDS, \
-    FT_HELLO_ACK = 0x01, 0x02, 0x03, 0x04, 0x05, 0x07, 0x0A, 0x0F
-KIND_AUTO, KIND_LOOP = 0x40, 0x20
+    FT_GAUGE, FT_HELLO_ACK = 0x01, 0x02, 0x03, 0x04, 0x05, 0x07, 0x0A, 0x0B, \
+    0x0F
+KIND_AUTO, KIND_LOOP, KIND_MARK = 0x40, 0x20, 0x10
 FRAME_END, FRAME_RESET = 0x20, 0x7F
 
 
@@ -75,12 +76,15 @@ def frame_stream():
         cc(CC_CTRL, FRAME_END)
 
     cc(CC_CTRL, FRAME_RESET)
-    frame(FT_HELLO_ACK, bytes([4]))
+    frame(FT_HELLO_ACK, bytes([5]))
     frame(FT_META, bytes([2, 1]))
     # state 2=WORKING, kind 1=claude, auto-approved and on repeat (flags)
     frame(FT_SLOT, bytes([0, 2, 1 | KIND_AUTO | KIND_LOOP]) + b"CLAUDE-1")
     frame(FT_BTNLEDS, bytes([0] * 11 + [2]))        # SEQ lit: repeat is on
-    frame(FT_SLOT, bytes([1, 3, 2]) + b"CODEX-2")   # state 3=BLOCKED, kind 2=codex
+    # state 3=BLOCKED, kind 2=codex, in the marked group
+    frame(FT_SLOT, bytes([1, 3, 2 | KIND_MARK]) + b"CODEX-2")
+    frame(FT_GAUGE, bytes([0, 42]))                 # context: 42% and 91% full
+    frame(FT_GAUGE, bytes([1, 91]))
     for i, line in enumerate([
             "claude code - agent deck",
             "editing host/agentdeck.py",
