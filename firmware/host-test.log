@@ -1,16 +1,42 @@
-     1 ms  MIDI out BF 117 1
+     1 ms  MIDI out BF 117 3
+   213 ms  MIDI out BF 120 0
+   213 ms  MIDI out BF 121 0
   1000 ms  screen -> build/host/agentdeck-1000.ppm
-  1000 ms  MIDI out BF 116 1
-  2000 ms  MIDI out BF 116 1
-  2020 ms  screen -> build/host/agentdeck-2020.ppm
-  2320 ms  MIDI out BF 120 1
-  2320 ms  MIDI out 9F 49 127
-  2620 ms  MIDI out 8F 49 0
-  2820 ms  MIDI out BF 115 127
-  2821 ms  MIDI out BF 115 0
+  1000 ms  MIDI out BF 116 3
+  1304 ms  screen -> build/host/agentdeck-1304.ppm
+  1424 ms  MIDI out BF 120 1
+  1424 ms  MIDI out 9F 49 127
+  1644 ms  MIDI out 8F 49 0
+  1764 ms  MIDI out BF 115 127
+  1765 ms  MIDI out BF 115 0
+  2000 ms  MIDI out BF 116 3
+  2092 ms  MIDI out BF 109 127
+  2092 ms  MIDI out BF 121 2
+  2093 ms  MIDI out BF 109 0
+  2412 ms  screen -> build/host/agentdeck-2412.ppm
+  2532 ms  MIDI out BF 108 127
+  2532 ms  MIDI out BF 121 1
+  2533 ms  MIDI out BF 108 0
+  2852 ms  screen -> build/host/agentdeck-2852.ppm
+  2996 ms  MIDI out BF 88 65
   3000 ms  screen -> build/host/agentdeck-3000.ppm
-  3000 ms  MIDI out BF 116 1
-  3120 ms  MIDI out BF 85 65
-  3120 ms  MIDI out BF 120 0
-  3420 ms  screen -> build/host/agentdeck-3420.ppm
-sound  -> build/host/agentdeck.wav (163840 frames)
+  3000 ms  MIDI out BF 116 3
+  3116 ms  MIDI out BF 120 1
+  3236 ms  MIDI out BF 110 127
+  3236 ms  MIDI out BF 121 0
+  3237 ms  MIDI out BF 110 0
+  4000 ms  MIDI out BF 116 3
+  4456 ms  screen -> build/host/agentdeck-4456.ppm
+  5000 ms  MIDI out BF 116 3
+  5237 ms  settings 0 saved (3 B)
+  5388 ms  MIDI out BF 115 127
+  5532 ms  MIDI out 9F 50 127
+  5702 ms  MIDI out 8F 50 0
+  5822 ms  MIDI out BF 115 0
+  6000 ms  MIDI out BF 116 3
+  6338 ms  MIDI out BF 85 65
+  6658 ms  screen -> build/host/agentdeck-6658.ppm
+  6778 ms  MIDI out BF 86 65
+  6778 ms  MIDI out BF 121 0
+  7000 ms  MIDI out BF 116 3
+sound  -> build/host/agentdeck.wav (317184 frames)
