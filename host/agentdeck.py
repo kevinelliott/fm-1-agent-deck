@@ -42,10 +42,20 @@ does (the full table is in README.md):
                            GLO + button acts on the marked ones only
                            (GLO + LFO clears the marks)
     ARP + key              toggle auto-approve on that agent
-    HOME on the GRID       jump to the agent that has waited longest
+    HOME on the GRID       the list, or the agents as coloured boxes
+                           (firmware 0.6)
+    GLO on APPROVALS       jump to the agent that has waited longest
+  Knobs with a button held:
+    PLAY + PRESETS         choose which agent PLAY starts
+    SEQ + PRESETS          how many times repeat mode sends
+    SEL + K1               scroll DETAIL a page at a time
+    LFO + K4               step through the marked agents
+  A prompt sent to a BLOCKED agent is queued and goes out once it is
+  free; a preset may be a list of steps, sent one per finished turn.
   MENU page (ALGORITHM): SELECT moves (K1: a page at a time), SEL picks,
     FX backs out - this agent, fleet, new agent, send prompt, event log,
-    close agent, settings, help.
+    close agent, settings, help, about.
+  ABOUT page (firmware 0.6): the app, the device, this daemon.
 
 Core uses only the Python 3 standard library. Real-MIDI mode additionally
 needs `mido` (+ `python-rtmidi`), imported lazily, so `--simulate` runs
@@ -62,7 +72,8 @@ Simulate mode reads commands from stdin, one per line:
   auto | focus | next | prev | scroll N | preset N | send | prompt TEXT
   spawn [KIND] | all approve|deny|interrupt|send | keys K [K...]
   btn NAME [up|down] | enc NAME N | key N [up] | page N
-  view | repeat | move N | copy | mark [N] | unmark | urgent | quit
+  view | repeat | move N | copy | mark [N] | unmark | urgent | mute
+  queue | quit
 (`btn` / `enc` / `key` / `page` replay a panel control exactly as the FM-1
 would send it; `btn NAME` alone is a tap, down then up.)
 """
@@ -70,6 +81,7 @@ would send it; `btn NAME` alone is a tap, down then up.)
 import argparse
 import json
 import os
+import platform
 import collections
 import glob
 import queue
@@ -83,7 +95,8 @@ import threading
 import time
 import types
 
-PROTO_VERSION = 5
+PROTO_VERSION = 6
+VERSION = "0.6"                # the daemon's own, shown on ABOUT
 
 # --- protocol constants (PROTOCOL.md) ---------------------------------------
 CH = 0x0F                      # MIDI channel 16 (low nibble)
@@ -95,16 +108,18 @@ FT_SLOT, FT_DETAIL, FT_META, FT_FOOTER, FT_BEEP, FT_SELECT, FT_TEXT, \
     FT_PAGE, FT_KEYLEDS, FT_BTNLEDS, FT_GAUGE, FT_HELLO_ACK = \
     0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0F
 CC_PAGE = 121
-PAGE_GRID, PAGE_DETAIL, PAGE_APPROVALS, PAGE_MENU = 0, 1, 2, 3
+PAGE_GRID, PAGE_DETAIL, PAGE_APPROVALS, PAGE_MENU, PAGE_ABOUT = 0, 1, 2, 3, 4
+ABOUT_LINE = 8                 # TEXT lines 8 and 9 are the ABOUT page's (v6)
 MENU_ROWS = 7                  # rows under the MENU page's title
 KIND_AUTO = 0x40               # SLOT kind-byte flag (v2+ devices only)
 KIND_LOOP = 0x20               # ... repeat mode (v4+ devices only)
 KIND_MARK = 0x10               # ... in the marked group (v5+ devices only)
+KIND_QUEUE = 0x08              # ... prompts are queued for it (v6+ devices only)
 GAUGE_NONE = 0x7F              # GAUGE: nothing known about this slot
 MAX_FRAME = 48
 MAX_SLOTS = 54
 COLS = 29                      # characters across the FM-1's text area
-DETAIL_ROWS = {1: 8, 2: 6, 3: 6, 4: 6, 5: 6}   # detail lines the device shows, by protocol
+DETAIL_ROWS = {1: 8, 2: 6, 3: 6, 4: 6, 5: 6, 6: 6}   # detail lines the device shows, by protocol
 
 STATES = ["EMPTY", "IDLE", "WORKING", "BLOCKED", "DONE", "ERROR", "UNKNOWN"]
 ST = {name: i for i, name in enumerate(STATES)}
@@ -134,7 +149,9 @@ B_DEVICE, B_OFF, B_ON, B_BLINK, B_GLOW = 0, 1, 2, 3, 4
 
 DEFAULT_CONFIG = {
     # Prompt presets: PRESETS arms one, SEQ sends it. A string, or
-    # {"label": "short name for the screen", "text": "what is sent"}.
+    # {"label": "short name for the screen", "text": "what is sent"}, or
+    # {"label": ..., "steps": ["first", "then", ...]}: a pipeline, one
+    # step per finished turn.
     "presets": [
         "continue",
         {"label": "run tests + fix",
@@ -149,6 +166,11 @@ DEFAULT_CONFIG = {
         {"label": "explain blocker",
          "text": "Explain what you are waiting on and what you need "
                  "from me."},
+        {"label": "test > review > commit",
+         "steps": ["Run the test suite and fix any failures.",
+                   "Review your changes for bugs and edge cases, then fix "
+                   "what you find.",
+                   "Commit your work with a clear commit message."]},
         "/compact",
         "/clear",
     ],
@@ -161,6 +183,19 @@ DEFAULT_CONFIG = {
     "spawn_cwd": None,
     # Extra directories offered by MENU > NEW AGENT.
     "projects": [],
+    # A prompt for a WORKING agent: false = send it now (the agent sees it
+    # mid-turn), true = hold it until the turn is over. Prompts for a
+    # BLOCKED agent are always held.
+    "queue_when_working": False,
+    # Auto-approve never answers a prompt that matches one of these
+    # (regular expressions, case-insensitive, tried against what the agent
+    # wants to run and the last screen lines): it alerts you instead.
+    "auto_never": [r"\brm\s+-\w*[rf]", r"git\s+push", r"git\s+reset\s+--hard",
+                   r"\bsudo\b", r"--force\b", r"drop\s+(table|database)",
+                   r"\bmkfs\b|\bdd\s+if="],
+    # When an agent blocks, move the selection to it (unless the selected
+    # agent is itself waiting on you).
+    "follow": False,
     # Repeat mode stops by itself after this many sends.
     "repeat_max": 10,
     # Chime again every N minutes while an agent stays BLOCKED (0 = off).
@@ -215,11 +250,17 @@ def normalise_presets(raw):
     out = []
     for p in raw if isinstance(raw, list) else []:
         if isinstance(p, str) and p.strip():
-            out.append({"label": p.strip(), "text": p})
+            out.append({"label": p.strip(), "text": p, "steps": [p]})
+        elif isinstance(p, dict) and isinstance(p.get("steps"), list):
+            steps = [str(x) for x in p["steps"] if str(x).strip()]
+            if steps:
+                out.append({"label": str(p.get("label") or steps[0]).strip(),
+                            "text": steps[0], "steps": steps})
         elif isinstance(p, dict) and str(p.get("text") or "").strip():
             out.append({"label": str(p.get("label") or p["text"]).strip(),
-                        "text": str(p["text"])})
-    return out or [{"label": "continue", "text": "continue"}]
+                        "text": str(p["text"]), "steps": [str(p["text"])]})
+    return out or [{"label": "continue", "text": "continue",
+                    "steps": ["continue"]}]
 
 
 class BackendError(Exception):
@@ -316,16 +357,18 @@ class SimulateLink:
             slot, state, kind = payload[0], payload[1], payload[2]
             name = payload[3:].decode("ascii", "replace")
             print("[frame] SLOT slot=%d state=%s kind=%s%s%s%s name=%s"
-                  % (slot, STATES[state], KINDS[kind & 0x0F],
+                  % (slot, STATES[state], KINDS[kind & 0x07],
                      " auto" if kind & KIND_AUTO else "",
                      " loop" if kind & KIND_LOOP else "",
-                     " mark" if kind & KIND_MARK else "", name))
+                     " mark" if kind & KIND_MARK else "", name) +
+                  (" [queue]" if kind & KIND_QUEUE else ""))
         elif ftype == FT_DETAIL and len(payload) >= 1:
             print("[frame] DETAIL line=%d: %s"
                   % (payload[0], payload[1:].decode("ascii", "replace")))
         elif ftype == FT_META and len(payload) >= 2:
-            print("[frame] META agents=%d blocked=%d"
-                  % (payload[0], payload[1]))
+            print("[frame] META agents=%d blocked=%d%s"
+                  % (payload[0], payload[1], " view=%s" % VIEWS[payload[2]]
+                     if len(payload) > 2 and 0 < payload[2] < 3 else ""))
         elif ftype == FT_FOOTER and len(payload) >= 1:
             style = self.FOOTER_STYLE[payload[0]] \
                 if payload[0] < len(self.FOOTER_STYLE) else str(payload[0])
@@ -1155,7 +1198,10 @@ HELP_LINES = [
     "LFO+key   mark / unmark it", "GLO+btn   marked ones, if any",
     "GLO+LFO   clear the marks", "ARP+key   auto-approve it",
     "SEQ held  repeat the prompt", "EDIT x2   output/info/diff",
-    "HOME x2   longest waiting", "K1 (menu) a page at a time",
+    "HOME x2   list / boxes", "GLO x2    longest waiting", "K1 (menu) a page at a time",
+    "PLAY+PRESETS which agent", "SEQ+PRESETS repeat count",
+    "SEL+K1    scroll a page", "LFO+K4    marked agents",
+    "SEQ > blocked: queued",
     "MASTER    chime volume"]
 SLOTS_FILE = "~/.config/agentdeck/slots.json"
 
@@ -1199,6 +1245,10 @@ class Daemon:
         self.chord = None          # {"name", "used", "fleet", "t"}: a held button
         self.view = "output"       # DETAIL shows: one of VIEWS
         self.beep_due = []         # when to repeat the attention chime
+        self.queue = {}            # agent id -> {"items": [(text, tag)],
+        #                            "wait": sent, not yet seen WORKING, "t"}
+        self.muted = set()         # agent ids that make no sound
+        self.auto_held = set()     # agent ids whose prompt auto would not answer
         self.marks = set()         # agent ids in the marked group
         self.options = []          # the selected prompt's [(digit, text)]
         self.ctx_pct = {}          # agent id -> context fullness, 0..100
@@ -1318,6 +1368,12 @@ class Daemon:
             r = self.repeat[a["id"]]
             out.append("REPEAT %d/%d: %s" % (
                 r["n"], self._repeat_max(), r["label"]))
+        if self.queue.get(a["id"]):
+            items = self.queue[a["id"]]["items"]
+            out.append("QUEUE %d: %s" % (len(items), ", ".join(
+                tag for _, tag in items)))
+        if a["id"] in self.auto_held:
+            out.append("AUTO-APPROVE HELD: risky")
         if i.get("prompt"):
             out.append("ASKED: " + i["prompt"])
         if a["id"] in self.ctx_pct:
@@ -1380,6 +1436,7 @@ class Daemon:
         self.refresh_detail()
         self.toast("VIEW: %s" % self.view.upper(), F_INFO, 1.5,
                    beep=BEEP_TICK)
+        self.poll_soon = time.time()           # the device's view tag
 
     def _send_btnleds(self, force=False):
         """The button LEDs the host owns: SEQ while the selected agent is
@@ -1458,6 +1515,9 @@ class Daemon:
             self.auto.discard(aid)
             self.repeat.pop(aid, None)
             self.marks.discard(aid)
+            self.queue.pop(aid, None)
+            self.muted.discard(aid)
+            self.auto_held.discard(aid)
             self.ctx_pct.pop(aid, None)
             self.ctx_warned.discard(aid)
             self.state_since.pop(aid, None)
@@ -1501,6 +1561,7 @@ class Daemon:
                 self.selected not in self.roster:
             self.selected = min(self.roster)   # a v1 device never says
         self._auto_approve(agents)
+        self._queue_step(agents)
         self._repeat_step(agents)
         self._notify(agents)
         self._nag(agents)
@@ -1515,7 +1576,8 @@ class Daemon:
         if full:
             self.last_full = time.time()
         blocked = sum(1 for a in agents if a["state"] == "BLOCKED")
-        meta = (min(len(agents), 99), min(blocked, 99))
+        meta = (min(len(agents), 99), min(blocked, 99),
+                VIEWS.index(self.view))
         if meta != self.sent_meta or full:
             self.link.frame(FT_META, bytes(meta))
             self.sent_meta = meta
@@ -1530,7 +1592,9 @@ class Daemon:
             auto = a["id"] in self.auto
             loop = a["id"] in self.repeat
             mark = a["id"] in self.marks
-            sig = (a["state"], a["kind"], a["name"], auto, loop, mark)
+            queued = bool(self.queue.get(a["id"]))
+            sig = (a["state"], a["kind"], a["name"], auto, loop, mark,
+                   queued)
             if old is None or old[0] != a["state"]:
                 print("[state] slot %d %s: %s -> %s"
                       % (slot, a["name"], old[0] if old else "NONE",
@@ -1543,6 +1607,8 @@ class Daemon:
                     kind |= KIND_LOOP
                 if mark and self.dev_proto >= 5:
                     kind |= KIND_MARK
+                if queued and self.dev_proto >= 6:
+                    kind |= KIND_QUEUE
                 payload = bytes([slot, ST[a["state"]], kind]) + \
                     clean_text(a["name"], 44).encode("ascii", "replace")
                 self.link.frame(FT_SLOT, payload)
@@ -1560,6 +1626,11 @@ class Daemon:
         if full:
             self.sent_footer = None
             self.sent_text.clear()
+            if self.dev_proto >= 6:            # our two lines of ABOUT
+                for n, text in enumerate(self.about_lines()[:2]):
+                    self.link.frame(FT_TEXT, bytes([ABOUT_LINE + n, 0]) +
+                                    clean_text(text, 19).encode(
+                                        "ascii", "replace"))
         self._send_footer()
         self._send_btnleds(force=full)
         if self.dev_page == PAGE_MENU:
@@ -1568,9 +1639,22 @@ class Daemon:
     def _auto_approve(self, agents):
         now = time.time()
         for a in agents:
+            if a["state"] != "BLOCKED":
+                self.auto_held.discard(a["id"])
             if a["id"] in self.auto and a["state"] == "BLOCKED" and \
                     now - self.auto_t.get(a["id"], 0.0) > 3.0:
                 self.auto_t[a["id"]] = now
+                risky = self._auto_risky(a)
+                if risky:
+                    if a["id"] not in self.auto_held:
+                        self.auto_held.add(a["id"])
+                        print("[auto] HELD for %s: matches %r"
+                              % (a["name"], risky))
+                        self.toast("AUTO HELD %s: YOU DECIDE" % a["name"],
+                                   F_WARN, 6.0, beep=None if a["id"] in
+                                   self.muted else BEEP_ALERT)
+                        self.log_event("%s auto held" % a["name"])
+                    continue
                 print("[auto] approve -> %s" % a["name"])
                 try:
                     self.backend.act(a["id"], "approve", None, kind=a["kind"])
@@ -1579,6 +1663,141 @@ class Daemon:
                 except Exception as e:
                     print("[auto] approve failed: %s" % e)
                 self.poll_soon = now + 0.4
+
+    def _auto_risky(self, a):
+        """The auto_never pattern the agent's prompt matches, or None. Looks
+        at what it wants to run and at the screen; when it cannot read the
+        screen it says so, and that holds the approval too."""
+        pats = [str(x) for x in self.cfg.get("auto_never") or [] if x]
+        if not pats:
+            return None
+        try:
+            screen = self.backend.read_lines(a["id"], 30)[-30:]
+        except Exception:
+            return "(screen unreadable)"
+        text = "\n".join([claude_insight(a).get("pending") or ""] + screen)
+        for pat in pats:
+            try:
+                if re.search(pat, text, re.I):
+                    return pat
+            except re.error:
+                print("[auto] bad auto_never pattern %r" % pat)
+        return None
+
+    def _queue_step(self, agents):
+        """Send each agent's next queued prompt once it is at rest. After a
+        send, wait to see it WORKING (or 15 s) before sending another."""
+        now = time.time()
+        for a in agents:
+            q = self.queue.get(a["id"])
+            if not q:
+                continue
+            if not q["items"]:
+                del self.queue[a["id"]]
+                continue
+            if a["state"] == "WORKING":
+                q["wait"] = False
+                continue
+            if a["state"] not in ("IDLE", "DONE"):
+                continue                       # BLOCKED / ERROR: hold
+            if q["wait"] and now - q["t"] < 15.0:
+                continue
+            text, tag = q["items"][0]
+            print("[queue] %s -> %s (%d left)" % (
+                tag, a["name"], len(q["items"]) - 1))
+            q["wait"], q["t"] = True, now
+            if self._run(a, "prompt", text):
+                q["items"].pop(0)
+                self.toast("QUEUE %s > %s (%d LEFT)" % (
+                    tag, a["name"], len(q["items"])), F_INFO, 2.5)
+                self.log_event("%s queue %s" % (a["name"], tag))
+                if not q["items"]:
+                    del self.queue[a["id"]]
+            self.poll_soon = now + 0.4
+
+    def send_text(self, steps, tag):
+        """A prompt (or a pipeline of them) for the selected agent: now if
+        it can take one, otherwise queued."""
+        a = self.roster.get(self.selected)
+        if not a:
+            self.toast("SLOT %02d IS EMPTY" % self.selected, F_WARN)
+            return
+        steps = list(steps)
+        hold = a["state"] == "BLOCKED" or bool(self.queue.get(a["id"])) or (
+            a["state"] == "WORKING" and self.cfg.get("queue_when_working"))
+        if not hold:
+            if not self.do_action("prompt", steps.pop(0),
+                                  label="SENT %s >" % tag):
+                return
+        if steps:
+            q = self.queue.setdefault(a["id"], {"items": [], "wait": False,
+                                                "t": 0.0})
+            n = len(steps)
+            q["items"] += [(text, "%s.%d" % (tag, i + 1 + (0 if hold else 1))
+                            if n > 1 or not hold else tag)
+                           for i, text in enumerate(steps)]
+            if not hold:
+                q["wait"], q["t"] = True, time.time()
+            print("[queue] +%d for %s (%d queued)" % (
+                n, a["name"], len(q["items"])))
+            if hold:
+                self.toast("QUEUED %s > %s (%d)" % (
+                    tag, a["name"], len(q["items"])), F_INFO, 2.5,
+                    beep=BEEP_TICK)
+            self.poll_soon = time.time()
+
+    def clear_queue(self):
+        a = self.roster.get(self.selected)
+        n = len(self.queue.pop(a["id"], {"items": []})["items"]) if a else 0
+        print("[queue] cleared (%d)" % n)
+        self.toast("QUEUE CLEARED x%d" % n, F_INFO)
+        self.poll_soon = time.time()
+
+    def toggle_mute(self):
+        a = self.roster.get(self.selected)
+        if not a:
+            return
+        on = a["id"] not in self.muted
+        (self.muted.add if on else self.muted.discard)(a["id"])
+        print("[mute] %s %s" % ("on" if on else "off", a["name"]))
+        self.toast("%s %s" % ("MUTED" if on else "UNMUTED", a["name"]),
+                   F_INFO)
+
+    def cycle_default_agent(self, delta):
+        """PLAY held + PRESETS: which agent PLAY starts."""
+        agents = self.cfg.get("agents") or {}
+        kinds = [k for k in sorted(agents)
+                 if shutil.which(str(agents[k]).split()[0])]
+        if not kinds:
+            self.toast("NO AGENT CLI FOUND", F_BAD)
+            return
+        cur = self.cfg.get("default_agent")
+        i = (kinds.index(cur) + (1 if delta > 0 else -1)) % len(kinds) \
+            if cur in kinds else 0
+        self.cfg["default_agent"] = kinds[i]
+        print("[spawn] default agent: %s" % kinds[i])
+        self.toast("PLAY STARTS: %s" % kinds[i].upper(), F_INFO, 2.0,
+                   beep=BEEP_TICK)
+
+    def adjust_repeat(self, delta):
+        """SEQ held + PRESETS: how many sends repeat mode makes."""
+        n = max(1, min(99, self._repeat_max() + (1 if delta > 0 else -1)))
+        self.cfg["repeat_max"] = n
+        self.toast("REPEAT UP TO x%d" % n, F_INFO, 2.0, beep=BEEP_TICK)
+
+    def jump_marked(self, direction):
+        """LFO held + K4: step through the marked agents."""
+        order = sorted(s for s, a in self.roster.items()
+                       if a["id"] in self.marks)
+        if not order:
+            self.toast("NO MARKED AGENTS", F_WARN, 1.5)
+            return
+        later = [s for s in order if s > self.selected]
+        earlier = [s for s in order if s < self.selected]
+        slot = (later[0] if later else order[0]) if direction > 0 \
+            else (earlier[-1] if earlier else order[-1])
+        self.link.frame(FT_SELECT, bytes([slot]))
+        self.select_slot(slot)
 
     def _notify(self, agents):
         """Chime + toast when an agent starts needing a human."""
@@ -1592,6 +1811,16 @@ class Daemon:
                 continue                       # first sight is not news
             if a["state"] in ("BLOCKED", "ERROR", "DONE"):
                 self.log_event("%s %s" % (a["name"], a["state"]))
+            if a["id"] in self.muted:
+                continue
+            if a["state"] == "BLOCKED" and a["id"] not in self.auto and \
+                    self.cfg.get("follow") and not self.held:
+                cur = self.roster.get(self.selected)
+                slot = self.slots.get(a["id"])
+                if slot is not None and not (cur and
+                                             cur["state"] == "BLOCKED"):
+                    self.link.frame(FT_SELECT, bytes([slot]))
+                    self.select_slot(slot)
             if a["state"] == "BLOCKED" and a["id"] not in self.auto:
                 want = claude_insight(a).get("pending")
                 ev = (0, BEEP_ALERT,
@@ -1626,7 +1855,8 @@ class Daemon:
             pct = min(100, ctx * 100 // (window if ctx <= window
                                          else max(window, 1000000)))
             self.ctx_pct[a["id"]] = pct
-            if warn and pct >= warn and a["id"] not in self.ctx_warned:
+            if warn and pct >= warn and a["id"] not in self.ctx_warned and \
+                    a["id"] not in self.muted:
                 self.ctx_warned.add(a["id"])
                 print("[context] %s is %d%% full" % (a["name"], pct))
                 self.toast("%s CONTEXT %d%%" % (a["name"], pct), F_WARN, 4.0,
@@ -1701,7 +1931,8 @@ class Daemon:
         now = time.time()
         live = set()
         for a in agents:
-            if a["state"] == "BLOCKED" and a["id"] not in self.auto:
+            if a["state"] == "BLOCKED" and a["id"] not in self.muted and \
+                    (a["id"] not in self.auto or a["id"] in self.auto_held):
                 live.add(a["id"])
                 self.blocked_since.setdefault(a["id"], now)
         for aid in [k for k in self.blocked_since if k not in live]:
@@ -1815,13 +2046,15 @@ class Daemon:
                 return
             action, arg, label = "prompt", command, "STARTING %s IN" % \
                 kind.upper()
-        if self._run(a, action, arg):
+        ok = self._run(a, action, arg)
+        if ok:
             done = label or PAST.get(action, action.upper())
             self.toast("%s %s" % (done, a["name"]), F_GOOD, 2.0,
                        beep=BEEP_DOWN if action in ("deny", "interrupt")
                        else BEEP_UP)
             self.log_event("%s %s" % (a["name"], done.lower().rstrip(" >")))
         self.poll_soon = time.time() + 0.4
+        return ok
 
     def do_fleet(self, action):
         """GLO held: the action, for every agent it applies to."""
@@ -1895,8 +2128,7 @@ class Daemon:
 
     def send_preset(self):
         p = self.presets[self.preset]
-        self.do_action("prompt", p["text"], label="SENT P%d >" %
-                       (self.preset + 1))
+        self.send_text(p["steps"], "P%d" % (self.preset + 1))
 
     def arm_preset(self, delta=0, index=None):
         n = len(self.presets)
@@ -1935,7 +2167,7 @@ class Daemon:
         self.poll_soon = time.time()
 
     def jump_urgent(self):
-        """HOME on the GRID: go to whoever has waited longest - the oldest
+        """GLO on APPROVALS: go to whoever has waited longest - the oldest
         BLOCKED, else an ERROR, else a DONE."""
         rank = {"BLOCKED": 0, "ERROR": 1, "DONE": 2}
         want = sorted(
@@ -2165,7 +2397,8 @@ class Daemon:
             ("EVENT LOG", self._menu_push(self._m_log)),
             ("CLOSE AGENT", self._menu_push(self._m_close)),
             ("SETTINGS", self._menu_push(self._m_settings)),
-            ("HELP", self._menu_push(self._m_help))]
+            ("HELP", self._menu_push(self._m_help)),
+            ("ABOUT", self.about)]
 
     def _m_agent(self):
         a = self.roster.get(self.selected)
@@ -2179,6 +2412,11 @@ class Daemon:
                                    else "OFF"), self.toggle_auto),
             ("MARKED: %s" % ("YES" if a["id"] in self.marks else "NO"),
              self.toggle_mark),
+            ("MUTED: %s" % ("YES" if a["id"] in self.muted else "NO"),
+             self.toggle_mute),
+            ("QUEUED: %d - CLEAR" % len(
+                self.queue.get(a["id"], {"items": []})["items"]),
+             self.clear_queue),
             ("COMMANDS", self._menu_push(self._m_commands)),
             ("FOCUS ON COMPUTER", self.focus),
             ("COPY LAST REPLY", self.copy_reply),
@@ -2190,7 +2428,7 @@ class Daemon:
             c = str(c).strip()
             if c:
                 def go(c=c):
-                    self.do_action("prompt", c, label="SENT %s >" % c[:12])
+                    self.send_text([c], c[:12])
                 items.append((c, go))
         return "COMMAND > %s" % self._target(), \
             items or [("(none configured)", None)]
@@ -2249,9 +2487,15 @@ class Daemon:
         items = []
         a = self.roster.get(self.selected)
         last = claude_insight(a).get("prompt") if a else None
+        def flip_queue():
+            self.cfg["queue_when_working"] = \
+                not self.cfg.get("queue_when_working")
+        items.append(("IF WORKING: %s" % (
+            "QUEUE IT" if self.cfg.get("queue_when_working")
+            else "SEND NOW"), flip_queue))
         if last:                               # what it was asked last time
-            items.append(("AGAIN: %s" % last, lambda: self.do_action(
-                "prompt", last, label="SENT AGAIN >")))
+            items.append(("AGAIN: %s" % last,
+                          lambda: self.send_text([last], "AGAIN")))
         for i, p in enumerate(self.presets):
             def go(i=i):
                 self.preset = i
@@ -2317,11 +2561,35 @@ class Daemon:
                                         else "OFF"), nag),
             ("DESKTOP NOTIFY: %s" % ("ON" if self.cfg.get("notify")
                                      else "OFF"), flip_off("notify")),
+            ("FOLLOW THE BLOCKED: %s" % ("ON" if self.cfg.get("follow")
+                                         else "OFF"), flip_off("follow")),
             ("FOCUS ON EDIT: %s" % on("focus_on_edit"),
              flip("focus_on_edit")),
             ("AUTO-APPROVE OFF, ALL (%d)" % len(self.auto),
              self.auto_off_all),
             ("RESYNC THE DEVICE", resync)]
+
+    def about_lines(self):
+        system = {"Darwin": "macOS", "Linux": "Linux"}.get(
+            platform.system(), platform.system() or "?")
+        return ["%s via %s" % (VERSION, self.backend.name),
+                "%s, python %s" % (system, ".".join(
+                    platform.python_version_tuple()[:2])),
+                "firmware protocol v%d" % self.dev_proto,
+                "%d agents" % len(self.roster)]
+
+    def _m_about(self):
+        return "ABOUT AGENT DECK", [("daemon " + ln if n == 0 else ln, None)
+                                    for n, ln in enumerate(self.about_lines())]
+
+    def about(self):
+        """MENU > ABOUT: the device's own page where it has one."""
+        if self.dev_proto >= 6:
+            self.menu = []
+            self.dev_page = PAGE_ABOUT
+            self.link.frame(FT_PAGE, bytes([PAGE_ABOUT]))
+        else:
+            self.menu.append([self._m_about, 0])
 
     def _m_help(self):
         return "HELP", [(ln, None) for ln in HELP_LINES]
@@ -2448,10 +2716,10 @@ class Daemon:
             self.toast("MARKED x%d: REC FX ENV SEQ LFO" % len(self.marks)
                        if self.marks else "ALL: REC FX ENV SEQ ARP",
                        F_INFO, 30.0)
-        elif name == "HOME":
-            # Already on the GRID (the page report comes after the button):
-            # HOME again goes to whoever has waited longest.
-            if self.dev_page == PAGE_GRID and self.dev_proto >= 3:
+            # Already on APPROVALS (the page report comes after the button):
+            # GLO again goes to whoever has waited longest.
+            if self.dev_page == PAGE_APPROVALS and self.dev_proto >= 3 \
+                    and not self.marks:
                 self.jump_urgent()
         elif name in ("OCT-", "OCT+"):
             self.page = max(0, min(1, self.page + (1 if name == "OCT+"
@@ -2484,6 +2752,20 @@ class Daemon:
                 self.focus()
 
     def on_encoder(self, name, delta):
+        c = self.chord
+        combo = (c["name"], name) if c else None
+        if combo in (("PLAY", "PRESETS"), ("SEQ", "PRESETS"), ("SEL", "K1"),
+                     ("LFO", "K4")):
+            c["used"] = True                   # the button was a modifier
+            if combo == ("PLAY", "PRESETS"):
+                self.cycle_default_agent(delta)
+            elif combo == ("SEQ", "PRESETS"):
+                self.adjust_repeat(delta)
+            elif combo == ("SEL", "K1"):
+                self.scroll_by(delta * 3)
+            else:
+                self.jump_marked(delta)
+            return
         if name == "K1" and self.dev_page == PAGE_MENU:
             self.menu_move(delta, MENU_ROWS)   # a page of the menu at a time
         elif name == "K1":
@@ -2590,6 +2872,11 @@ class Daemon:
             self.clear_marks()
         elif cmd == "urgent":
             self.jump_urgent()
+        elif cmd == "mute":
+            self.toggle_mute()
+        elif cmd == "queue":
+            a = self.roster.get(self.selected)
+            print("[queue] %s" % (self.queue.get(a["id"]) if a else None))
         elif cmd in ("next", "prev"):
             self.jump_attention(1 if cmd == "next" else -1)
         elif cmd == "scroll":
@@ -2649,7 +2936,7 @@ SIM_HELP = ("select N | start | approve | always | deny | interrupt | enter"
             " send | prompt TEXT | spawn [KIND] | all approve|deny|interrupt"
             "|send | keys K.. | btn NAME [up|down] | enc NAME N |"
             " key N | page N | view | repeat | move N | copy | mark [N] |"
-            " unmark | urgent | quit")
+            " unmark | urgent | mute | queue | quit")
 
 
 def main(argv=None):
