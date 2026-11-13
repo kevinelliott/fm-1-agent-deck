@@ -10,14 +10,15 @@ input, the wire protocol) is tested here, against the package, until —
 and after — real hardware is on the desk.
 
 What it does:
-  1. Boots dist/agentdeck-0.1.fwsc in the fm1-emu batch runner.
+  1. Boots the newest dist/agentdeck-*.fwsc in the fm1-emu batch runner.
   2. Injects, through the FM-1's MIDI IN jack (the firmware's platform
      merges TRS MIDI into the same queue as USB MIDI), the exact CC
      frame stream the real daemon sends on a full resync: RESET,
      HELLO_ACK, META, two SLOT frames (CLAUDE-1 working, CODEX-2
-     blocked) and four DETAIL lines for the selected agent.
-  3. Turns the ALGORITHM encoder twice to walk GRID -> DETAIL ->
-     APPROVALS.
+     blocked), four DETAIL lines for the selected agent, a FOOTER
+     (the armed prompt preset) and a BEEP (the attention chime).
+  3. Turns the ALGORITHM encoder three times to walk GRID -> DETAIL ->
+     APPROVALS -> MENU (whose text the frame stream also carried).
   4. Snapshots the LCD at each page and checks the run: clean exit, the
      CPU ran the full session without a halt (an unknown opcode or a
      wild jump halts the core, so a full-length run is the clean-decode
@@ -49,7 +50,9 @@ import tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CC_CTRL, CC_DATA = 118, 119
-FT_SLOT, FT_DETAIL, FT_META, FT_HELLO_ACK = 0x01, 0x02, 0x03, 0x0F
+FT_SLOT, FT_DETAIL, FT_META, FT_FOOTER, FT_BEEP, FT_TEXT, FT_HELLO_ACK = \
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x07, 0x0F
+KIND_AUTO = 0x40
 FRAME_END, FRAME_RESET = 0x20, 0x7F
 
 
@@ -72,9 +75,10 @@ def frame_stream():
         cc(CC_CTRL, FRAME_END)
 
     cc(CC_CTRL, FRAME_RESET)
-    frame(FT_HELLO_ACK, bytes([1]))
+    frame(FT_HELLO_ACK, bytes([3]))
     frame(FT_META, bytes([2, 1]))
-    frame(FT_SLOT, bytes([0, 2, 1]) + b"CLAUDE-1")  # state 2=WORKING, kind 1=claude
+    # state 2=WORKING, kind 1=claude, auto-approved (v2 flag)
+    frame(FT_SLOT, bytes([0, 2, 1 | KIND_AUTO]) + b"CLAUDE-1")
     frame(FT_SLOT, bytes([1, 3, 2]) + b"CODEX-2")   # state 3=BLOCKED, kind 2=codex
     for i, line in enumerate([
             "claude code - agent deck",
@@ -82,6 +86,13 @@ def frame_stream():
             "tests: pytest -q",
             "34 passed, 0 failed"]):
         frame(FT_DETAIL, bytes([i]) + line.encode())
+    frame(FT_FOOTER, bytes([0]) + b"P2/8 run tests + fix")   # armed preset
+    frame(FT_BEEP, bytes([1]))                      # the attention chime
+    for i, (style, text) in enumerate([           # the host's MENU page
+            (1, "MENU - CLAUDE-1"), (5, "> NEW AGENT"), (6, "  SEND PROMPT"),
+            (6, "  EVENT LOG"), (6, "  CLOSE AGENT"), (6, "  SETTINGS"),
+            (6, "  HELP")]):
+        frame(FT_TEXT, bytes([i, style]) + text.encode())
     return msgs
 
 
@@ -94,7 +105,18 @@ def keys_script(msgs, full):
     if full:
         items.append("7000:ALGO:+1")    # GRID -> DETAIL
         items.append("10000:ALGO:+1")   # DETAIL -> APPROVALS
+        items.append("13000:ALGO:+1")   # APPROVALS -> MENU
     return ",".join(items)
+
+
+def newest_fwsc():
+    import glob
+    def ver(p):
+        return [int(x) for x in re.findall(r"\d+", os.path.basename(p))]
+    found = sorted(glob.glob(os.path.join(ROOT, "dist", "agentdeck-*.fwsc")),
+                   key=ver)
+    return found[-1] if found else os.path.join(ROOT, "dist",
+                                                "agentdeck.fwsc")
 
 
 def find_emu():
@@ -130,7 +152,7 @@ def nonblank(png_or_bmp):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--fwsc", default=os.path.join(ROOT, "dist", "agentdeck-0.1.fwsc"))
+    ap.add_argument("--fwsc", default=newest_fwsc())
     ap.add_argument("--out", default=os.path.join(ROOT, "build", "emu-test"))
     ap.add_argument("--boot-only", action="store_true",
                     help="boot + frames + GRID snapshot only")
@@ -149,8 +171,8 @@ def main():
     full = not args.boot_only
     if full:
         snaps = [(5000, "emu-grid"), (9000, "emu-detail"),
-                 (12000, "emu-approvals")]
-        ms = "13000"
+                 (12000, "emu-approvals"), (15000, "emu-menu")]
+        ms = "16000"
     else:
         snaps = [(4000, "emu-grid")]
         ms = "5000"
@@ -198,7 +220,7 @@ def main():
         return 1
     print("PASS: packaged firmware booted in fm1-emu, accepted the "
           "daemon frame stream, and rendered %s."
-          % ("all three pages" if full else "the GRID page"))
+          % ("all four pages" if full else "the GRID page"))
     return 0
 
 
