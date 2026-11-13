@@ -66,19 +66,22 @@ Your agents get physical presence: their states live on the FM-1's key LEDs
 and its 240×240 screen, and the agents that are **blocked waiting on you**
 blink until you deal with them. Approve a permission prompt, deny it,
 interrupt a runaway agent, or resume one — from the device, without
-switching windows.
+switching windows. Or go further: answer an agent's menu with two knobs,
+fire a canned prompt at it, put it on auto-approve, start a new agent on an
+empty key, hold REC and tap every blinking key to clear a row of approvals,
+and let the deck chime when someone needs you.
 
-> **Status (Nov 2026):** built and verified end-to-end *without* hardware.
-> The host daemon is live-tested against real tmux sessions and a real
-> Herdr server; the firmware logic runs in Dinghy's host emulator; and the
-> real flashable package (`dist/agentdeck-0.1.fwsc`) — built with the
-> JieLi toolchain and validated by the installer's own package loader —
-> **boots and runs in [fm1-emu](https://github.com/joakimeriksson/fm1-emu),
-> the chip-level FM-1 emulator**, driven there by the daemon's own frame
-> stream (see [See it running](#see-it-running--fm1-emu)). The author's
-> first FM-1 arrives mid-Nov 2026 — the on-hardware flash is the only
-> untested step, and the [arrival-day guide](#arrival-day-read-this-before-plugging-anything-in)
-> below is the checklist for it.
+> **Status (Nov 2026):** running on real hardware. The current release,
+> **firmware 0.3** (`dist/agentdeck-0.3.fwsc`, protocol v3), is installed
+> on the author's FM-1 — flashed over USB with the installer in this repo,
+> as 0.1 and 0.2 were before it — and driven there by the daemon against a
+> live Herdr session. Every release is first built with the JieLi
+> toolchain and booted in [fm1-emu](https://github.com/joakimeriksson/fm1-emu),
+> the chip-level FM-1 emulator (see [See it running](#see-it-running--fm1-emu)).
+> Still young: individual features have had far more emulator and
+> simulate-mode time than hours on the desk, so expect rough edges — the
+> [arrival-day guide](#arrival-day-read-this-before-plugging-anything-in)
+> is the checklist for a first flash.
 
 > ⚠️ **Flashing custom firmware is at your own risk.** The FM-1's flash is
 > single-bank; an interrupted write can leave the unit dark until rescued
@@ -89,22 +92,25 @@ switching windows.
 
 ## See it running — fm1-emu
 
-No FM-1 on your desk? Neither is there one here yet. Agent Deck is
+No FM-1 on your desk? Agent Deck is
 developed and tested against **[fm1-emu](https://github.com/joakimeriksson/fm1-emu)**,
 Joakim Eriksson's emulator for the FM-1: it emulates the JieLi AC791N
 chip itself (both CPU cores, screen, keys, encoders, MIDI), so firmware
 packages run in it *unchanged* — the same `.fwsc` you would flash.
 
-These are not mockups. They are the LCD of `dist/agentdeck-0.1.fwsc`
+These are not mockups. They are the LCD of `dist/agentdeck-0.3.fwsc`
 booted in fm1-emu, fed the exact frame stream the real daemon sends
 (injected through the FM-1's MIDI IN jack, which the firmware's platform
 merges into the same queue as USB MIDI), with the ALGORITHM encoder
 turned to walk the pages — captured by
 [`tools/emu_test.py`](tools/emu_test.py):
 
-| GRID | DETAIL | APPROVALS |
-|---|---|---|
-| ![GRID page in fm1-emu: two agents, CLAUDE-1 working, CODEX-2 blocked, HOST OK](docs/emu-grid.png) | ![DETAIL page in fm1-emu: CLAUDE-1 working, its latest output lines](docs/emu-detail.png) | ![APPROVALS page in fm1-emu: CODEX-2 blocked, waiting on you](docs/emu-approvals.png) |
+| GRID | DETAIL | APPROVALS | MENU |
+|---|---|---|---|
+| ![GRID page in fm1-emu: CLAUDE-1 working and auto-approved, CODEX-2 blocked, time in state, the armed prompt on the footer](docs/emu-grid.png) | ![DETAIL page in fm1-emu: CLAUDE-1 working, its latest output lines](docs/emu-detail.png) | ![APPROVALS page in fm1-emu: CODEX-2 blocked, waiting on you](docs/emu-approvals.png) | ![MENU page in fm1-emu: new agent, send prompt, event log, close agent, settings, help](docs/emu-menu.png) |
+
+(The animation at the top of this page and the browser player below
+still run firmware 0.1 — three pages, no footer.)
 
 **Run it yourself, in the browser:** this project hosts its own
 fm1-emu player (a vendored copy of the emulator whose only firmware
@@ -140,7 +146,7 @@ screen, panel, audio, and every MIDI input of your computer.
 One honest limit: in the emulator the deck has no live daemon behind it,
 so what you see is the panel, the pages and the protocol working against
 canned frames — for the full loop, pair the daemon with tmux/Herdr in
-`--simulate` mode (below), or wait for hardware like the rest of us. The
+`--simulate` mode (below), or flash a real one. The
 player above is self-hosted because the upstream fm1-emu page only
 deep-links (`?fw=`) firmwares in its own catalog; a listing on the
 [FM-1 Firmware Hub](https://thefirmwarehub.com/) would put Agent Deck
@@ -159,7 +165,7 @@ cd fm-1-agent-deck
 
 # 1. See the daemon work against your own tmux or Herdr sessions:
 python3 host/agentdeck.py --backend auto --simulate
-#    commands: select N | start | approve | deny | interrupt | prompt TEXT | quit
+#    (it prints its command list: select N | approve | deny | send | spawn | ...)
 
 # 2. Or run the self-test (spins up three throwaway tmux sessions — a fake
 #    Claude Code approval prompt, a spinner, an idle shell — and drives the
@@ -209,7 +215,8 @@ python3 host/agentdeck.py --backend auto
 The daemon polls the backend once a second (Herdr events also nudge it),
 diffs the roster, and sends only the changes to the FM-1 as small frames:
 `SLOT` (one agent's slot/state/kind/name), `DETAIL` (the selected agent's
-last output lines), and `META` (agent count, blocked count). The FM-1
+output lines), `META` (agent count, blocked count), `FOOTER` (the status
+line) and `BEEP` (a chime). The FM-1
 replies with a heartbeat once a second; the screen header shows `HOST OK`
 while heartbeats flow and `NO HOST` when they stop. Slot assignments are
 stable for the life of the daemon process, in backend discovery order,
@@ -241,8 +248,8 @@ select that agent. The key's LED shows its state:
 | slow pulse, 1 Hz | UNKNOWN | agent present, state unclassified |
 
 Button LEDs echo context too: PLAY lights while the selected agent is
-WORKING, REC blinks while the selected agent is BLOCKED, HOME/GLO light
-on their pages.
+WORKING, REC blinks while the selected agent is BLOCKED, ARP lights while
+it is on auto-approve, HOME/EDIT/GLO light on their pages.
 
 ### Buttons and encoders
 
@@ -250,24 +257,72 @@ Actions are executed by the host daemon against the *selected* agent:
 
 | Control | Action |
 |---|---|
-| **PLAY** | start / resume the selected agent |
-| **REC** | approve (answer the agent's pending prompt) |
-| **SAVE** | approve — and jump to the APPROVALS page on the device |
-| **FX** | deny (sends Esc) |
-| **ENV** | interrupt (sends Ctrl-C) |
-| **HOME** | GRID page |
-| **EDIT** | DETAIL page (selected agent's recent output) |
-| **GLO** | APPROVALS page (all BLOCKED agents) |
+| **Keys** | select a slot (empty ones too) |
+| **SELECT** encoder | move the selection across agents |
+| **PLAY** | start / continue; on an **empty slot**, spawn a new agent there (`default_agent`, in a new Herdr workspace / tmux window) |
+| **REC** | approve the pending prompt |
+| **SAVE** | approve *and don't ask again* — picks the prompt's "Yes, and don't ask again / allow all…" option when one is on screen; otherwise does nothing and says so |
+| **FX** | deny (Esc) |
+| **ENV** | interrupt (Ctrl-C) |
+| **SEL** | Enter |
+| **K2** / **K3** encoders | Up·Down / Left·Right arrow keys — with SEL, enough to answer any menu an agent shows |
+| **LFO** | cycle the agent's mode (Shift+Tab) |
+| **PRESETS** encoder | arm a prompt preset (shown on the footer line) |
+| **SEQ** | send the armed preset as a prompt |
+| **ARP** | toggle auto-approve for this agent (row shows `A`, ARP lights); the daemon then approves its prompts as they appear. Off by default, forgotten when the daemon restarts |
+| **K1** encoder | scroll DETAIL back through the agent's output |
+| **K4** encoder | jump to the next agent that needs you (BLOCKED, then ERROR, then DONE) |
+| **EDIT** | DETAIL page — and focus that pane on the computer |
+| **HOME** / **GLO** | GRID page / APPROVALS page |
+| **ALGORITHM** encoder | cycle GRID → DETAIL → APPROVALS → MENU |
 | **OCT− / OCT+** | previous / next slot page (54 slots total) |
-| **SELECT** encoder | move the selection |
-| **ALGORITHM** encoder | cycle GRID → DETAIL → APPROVALS |
-| **K1** encoder | scroll the DETAIL page's lines |
-| other buttons/knobs | forwarded to the host as protocol events; currently unused |
+| **GLO held +** REC / FX / ENV / SEQ / ARP | the same for *every* agent it applies to: approve or deny all BLOCKED, interrupt all WORKING, send the preset to all IDLE/DONE, auto-approve off everywhere |
+| **MASTER** | chime volume |
 
-The three screen pages: **GRID** (every agent as a labelled strip with its
-state), **DETAIL** (the selected agent plus its last 8 output lines), and
-**APPROVALS** (just the agents waiting on you — the page that makes the
-device worth having).
+**Chords** (firmware 0.3) — hold a button and tap keys; the cursor stays
+where it is, and while the button is held the keys light up to show what
+a tap would hit:
+
+| Chord | Action |
+|---|---|
+| **REC + key** | approve *that* agent (blocked ones blink) |
+| **FX + key** | deny that agent |
+| **ENV + key** | interrupt that agent (working ones blink) |
+| **SEQ + key N** | send prompt preset N to the selected agent |
+| **SEL + key N** | answer option N — types the digit 1–9 |
+
+A chord button tapped on its own still does its normal thing (on release).
+
+**The MENU page** (firmware 0.3; ALGORITHM turns to it) is drawn by the
+daemon: SELECT moves, SEL picks, FX backs out.
+
+| Entry | What it does |
+|---|---|
+| NEW AGENT | pick an installed agent CLI and a directory (the current agents' directories plus `projects` from the config) and start it |
+| SEND PROMPT | the preset list; pick one to send to the selected agent |
+| EVENT LOG | who got blocked, finished, was approved or closed, and how long ago |
+| CLOSE AGENT | close the selected agent's pane, after a yes/no |
+| SETTINGS | sounds, focus-on-EDIT, auto-approve off everywhere, resync the device |
+| HELP | the control list above, on the device |
+
+Slots are remembered across daemon restarts
+(`~/.config/agentdeck/slots.json`), so an agent keeps its key.
+
+The bottom line of every page is the **footer**: the armed prompt preset
+(`P2/8 run tests + fix`), or for a few seconds the result of what you just
+did (`APPROVED api-server`) or an agent calling for you (`docs NEEDS YOU`).
+The deck also **chimes** through the FM-1's own output when an agent
+becomes BLOCKED, finishes, or errors (`"sounds": false` turns that off).
+Each GRID row shows how long the agent has been in its state.
+
+The footer, chimes, K1/K4 and the auto-approve marker need **firmware
+0.2**, the chords and the MENU page **0.3**; an older unit gets every
+other control above (chord buttons then act at once, on press).
+
+The four screen pages: **GRID** (every agent as a labelled strip with its
+state), **DETAIL** (the selected agent plus its output, word-wrapped, 6
+lines at a time), **APPROVALS** (just the agents waiting on you — the page
+that makes the device worth having), and **MENU** (above).
 
 ---
 
@@ -277,9 +332,10 @@ device worth having).
 standard-library only; real-MIDI mode additionally needs
 `mido` + `python-rtmidi`. Simulate mode needs nothing and is the best way
 to understand the system: it prints every frame it *would* send to the
-FM-1 and takes typed commands (`select`, `start`, `approve`, `deny`,
-`interrupt`, `prompt`, `quit`) that do exactly what the physical controls
-would do.
+FM-1 and takes typed commands (`select`, `start`, `approve`, `always`,
+`deny`, `interrupt`, `send`, `prompt`, `spawn`, … — it prints the list at
+startup) that do exactly what the physical controls would do; `btn NAME`
+and `enc NAME N` replay a panel control as the FM-1 would send it.
 
 ### CLI
 
@@ -291,6 +347,23 @@ would do.
 | `--herdr-socket` | auto | explicit Herdr socket path |
 | `--herdr-session` | — | use a named Herdr session's socket |
 | `--poll` | 1.0 | backend poll interval, seconds |
+| `--config` | `~/.config/agentdeck/config.json` if present | JSON config, see below |
+
+### Config
+
+Optional. Copy [`host/config.example.json`](host/config.example.json) to
+`~/.config/agentdeck/config.json` (or pass `--config`); anything left out
+keeps its default.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `presets` | 8 built-ins (`continue`, run tests + fix, summarize, review changes, commit, explain blocker, `/compact`, `/clear`) | the prompts PRESETS arms and SEQ sends: a string, or `{"label": …, "text": …}` |
+| `default_agent` | `claude` | what PLAY starts on an empty slot |
+| `agents` | `claude`, `codex`, `opencode`, `grok`, `copilot` | shell command per agent kind (add flags here) |
+| `spawn_cwd` | `null` | where a spawned agent starts; `null` = the selected agent's directory |
+| `projects` | `[]` | extra directories offered by MENU → NEW AGENT |
+| `sounds` | `true` | chimes on BLOCKED / DONE / ERROR |
+| `focus_on_edit` | `true` | EDIT also focuses the pane on the computer |
 
 A backend that dies or errors is reported once and retried every poll;
 it never takes the MIDI loop down.
@@ -368,9 +441,10 @@ git clone --depth 1 --branch AC79NN_SDK_V1.2.1_2023-12-13 \
     https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git ~/fw-AC79_AIoT_SDK
 pip install mido python-rtmidi Pillow
 
-./build.sh --release 0.1                     # -> build/agentdeck-0.1.fwsc
+./build.sh --release 0.3                     # -> build/agentdeck-0.3.fwsc
 
 # host emulator test (no device, no toolchain): tests/agentdeck.txt
+# (generated by tools/gen_host_test.py; on macOS add '-Dsection(x)=' to cc)
 # injects protocol frames, presses keys/buttons, renders the screen
 cc -O2 -Wall -Wno-unused-function -DDINGHY_HOST -DAPP_VER="\"dev\"" \
    -Ifirmware/hal -Ifirmware/src -Ifirmware/gen \
@@ -395,7 +469,7 @@ on real hardware.
 Verified 2026-11-09: the same packaged `.fwsc` boots in **fm1-emu**
 (0.4.0) on the emulated AC791N and runs a full scripted session to
 completion with no CPU halt — accepting the daemon's frame stream
-injected through the MIDI IN jack and rendering all three pages; the
+injected through the MIDI IN jack and rendering all its pages; the
 captures are in [`docs/`](#see-it-running--fm1-emu) and the session is
 reproducible with `tools/emu_test.py`. That makes fm1-emu the
 project's on-device test stand-in: the host harness above stays the
@@ -439,7 +513,7 @@ that one line is the fix.
    use M-VAVE's M-UPGRADE updater (or a browser installer's
    "Return to official V15" option) if it shipped with V16.
 3. Flash Agent Deck over USB, using the package in `dist/`:
-   `python3 firmware-build/tools/fm1_install.py dist/agentdeck-0.1.fwsc`
+   `python3 firmware-build/tools/fm1_install.py dist/agentdeck-0.3.fwsc`
    (or the FM-1 Firmware Hub in Chrome/Edge). The installer asks before
    it writes; the FM-1 restarts into Agent Deck.
 4. Start the daemon (`--backend auto`), watch the FM-1 screen switch
@@ -480,28 +554,30 @@ steps get repeated on the real unit.
 
 | Test | Command | Covers |
 |---|---|---|
-| **fm1-emu device test** | `python3 tools/emu_test.py` (after `tools/get_emu.sh`) | the packaged `.fwsc` booting on the emulated AC791N, daemon frame stream in via MIDI IN, GRID/DETAIL/APPROVALS rendering, ALGORITHM page walk; LCD snapshots in `build/emu-test/` |
+| **fm1-emu device test** | `python3 tools/emu_test.py` (after `tools/get_emu.sh`) | the packaged `.fwsc` booting on the emulated AC791N, daemon frame stream in via MIDI IN, GRID/DETAIL/APPROVALS/MENU rendering, ALGORITHM page walk; LCD snapshots in `build/emu-test/` |
 | tmux end-to-end | `sh host/test_simulate.sh` | discovery, BLOCKED/WORKING/IDLE heuristics, approve landing in the pane (`host/simulate-test.log`) |
 | Herdr live run | `python3 host/agentdeck.py --backend herdr --simulate` against a running Herdr | native states, detail text, approve/deny/interrupt/prompt/start (`host/herdr-test.log` is a captured run) |
 | Firmware host harness | the `cc …` build in [Building](#building-the-firmware) | frame parsing, screen rendering, panel event output (`firmware/host-test.log`) — fast inner loop; not a substitute for the fm1-emu run |
 
-## v1 scope limits & roadmap
+## Scope limits & roadmap
 
 Limits, honestly:
 
 - **USB-MIDI only.** The protocol is transport-agnostic and BLE MIDI is
   the obvious next step, but Dinghy's BLE path is untested for this use.
-- **No text entry on the device.** Typed prompts happen from the
-  daemon's CLI; the FM-1's SEQ button is forwarded as a host event but
-  has no text-entry mode (27 keys ≠ a keyboard, whatever the synth
-  pretends).
-- **54 slots max** (2 pages); slots follow backend discovery order.
+- **No text entry on the device.** SEQ sends one of your prompt presets
+  (PRESETS picks); free-form prompts are typed at the agent itself
+  (27 keys ≠ a keyboard, whatever the synth pretends).
+- **54 slots max** (2 pages); a new agent takes the first free slot (or
+  the empty one you pressed PLAY on) and keeps it across daemon restarts.
 - **1 s delta updates.** This is a status deck, not a terminal; the
-  DETAIL page shows the last 8 captured lines.
+  DETAIL page shows 6 wrapped lines at a time (K1 scrolls back ~200
+  terminal lines).
 - **Herdr backend verified against 0.9.5.** Other versions may rename
   socket methods (see Troubleshooting).
 
-Roadmap ideas, in rough order: first-hardware validation and fixes →
+Roadmap ideas, in rough order: more hours on real hardware, and fixes →
+refreshing the browser player and the animation to the current firmware →
 Firmware Hub listing (the Hub requires a package tested on real
 hardware; listing unlocks fm1-emu's one-click `?fw=` browser link from
 this README) → BLE MIDI transport → per-agent cost/token readouts on
@@ -513,7 +589,7 @@ menu-bar/status companion so the daemon can autostart.
 
 | Path | What |
 |---|---|
-| `PROTOCOL.md` | The wire spec (v1) |
+| `PROTOCOL.md` | The wire spec (v3) |
 | `host/agentdeck.py` | The daemon: Herdr + tmux backends, MIDI + simulate modes |
 | `host/test_simulate.sh` | End-to-end simulate test against real tmux panes |
 | `host/simulate-test.log` | Latest tmux test run — ALL PASS |
@@ -523,12 +599,14 @@ menu-bar/status companion so the daemon can autostart.
 | `firmware/screen-grid.png` | The GRID page as rendered by the host harness |
 | `tools/emu_test.py` | fm1-emu device test: boots the packaged `.fwsc`, injects daemon frames, walks the pages, snapshots the LCD |
 | `tools/get_emu.sh` | Fetches the fm1-emu release binary into `tools/fm1-emu-bin/` |
-| `docs/emu-grid.png` · `docs/emu-detail.png` · `docs/emu-approvals.png` | The three pages as rendered by the packaged firmware in fm1-emu (`python3 tools/emu_test.py --out docs` regenerates them) |
+| `docs/emu-grid.png` · `docs/emu-detail.png` · `docs/emu-approvals.png` · `docs/emu-menu.png` | The four pages as rendered by the packaged firmware in fm1-emu (`python3 tools/emu_test.py --out docs` regenerates them) |
 | `docs/emu-demo.gif` | The emu session as an animation (GRID → DETAIL → APPROVALS), at the top of this README |
 | `docs/play/` | The self-hosted live player: vendored fm1-emu (MIT) + Agent Deck catalog + the auto-play demo script, served by GitHub Pages |
 | `docs/fm1-agent-deck-hero.jpg` | Hero image: an FM-1 (White and Blue) with the packaged firmware's fm1-emu GRID page composited into its screen |
 | `firmware-build/` | Dinghy tree + Agent Deck identity; `./build.sh` here |
-| `dist/agentdeck-0.1.fwsc` | The built firmware package, ready to flash |
+| `dist/agentdeck-0.3.fwsc` | The built firmware package, ready to flash (`-0.2`, `-0.1`: earlier releases; the web player still runs 0.1) |
+| `host/config.example.json` | Example daemon config (prompt presets, default agent) |
+| `tools/gen_host_test.py` | Generates the host-harness session `firmware-build/tests/agentdeck.txt` |
 
 ## Credits
 
