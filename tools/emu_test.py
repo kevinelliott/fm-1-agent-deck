@@ -50,9 +50,9 @@ import tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CC_CTRL, CC_DATA = 118, 119
-FT_SLOT, FT_DETAIL, FT_META, FT_FOOTER, FT_BEEP, FT_TEXT, FT_HELLO_ACK = \
-    0x01, 0x02, 0x03, 0x04, 0x05, 0x07, 0x0F
-KIND_AUTO = 0x40
+FT_SLOT, FT_DETAIL, FT_META, FT_FOOTER, FT_BEEP, FT_TEXT, FT_BTNLEDS, \
+    FT_HELLO_ACK = 0x01, 0x02, 0x03, 0x04, 0x05, 0x07, 0x0A, 0x0F
+KIND_AUTO, KIND_LOOP = 0x40, 0x20
 FRAME_END, FRAME_RESET = 0x20, 0x7F
 
 
@@ -75,10 +75,11 @@ def frame_stream():
         cc(CC_CTRL, FRAME_END)
 
     cc(CC_CTRL, FRAME_RESET)
-    frame(FT_HELLO_ACK, bytes([3]))
+    frame(FT_HELLO_ACK, bytes([4]))
     frame(FT_META, bytes([2, 1]))
-    # state 2=WORKING, kind 1=claude, auto-approved (v2 flag)
-    frame(FT_SLOT, bytes([0, 2, 1 | KIND_AUTO]) + b"CLAUDE-1")
+    # state 2=WORKING, kind 1=claude, auto-approved and on repeat (flags)
+    frame(FT_SLOT, bytes([0, 2, 1 | KIND_AUTO | KIND_LOOP]) + b"CLAUDE-1")
+    frame(FT_BTNLEDS, bytes([0] * 11 + [2]))        # SEQ lit: repeat is on
     frame(FT_SLOT, bytes([1, 3, 2]) + b"CODEX-2")   # state 3=BLOCKED, kind 2=codex
     for i, line in enumerate([
             "claude code - agent deck",
@@ -89,9 +90,9 @@ def frame_stream():
     frame(FT_FOOTER, bytes([0]) + b"P2/8 run tests + fix")   # armed preset
     frame(FT_BEEP, bytes([1]))                      # the attention chime
     for i, (style, text) in enumerate([           # the host's MENU page
-            (1, "MENU - CLAUDE-1"), (5, "> NEW AGENT"), (6, "  SEND PROMPT"),
-            (6, "  EVENT LOG"), (6, "  CLOSE AGENT"), (6, "  SETTINGS"),
-            (6, "  HELP")]):
+            (1, "MENU - CLAUDE-1"), (5, "> THIS AGENT"), (6, "  NEW AGENT"),
+            (6, "  SEND PROMPT"), (6, "  EVENT LOG"), (6, "  CLOSE AGENT"),
+            (6, "  SETTINGS"), (6, "  HELP")]):
         frame(FT_TEXT, bytes([i, style]) + text.encode())
     return msgs
 
