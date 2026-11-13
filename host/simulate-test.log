@@ -1,7 +1,7 @@
-[agentdeck] backend=tmux mode=simulate proto=v3
+[agentdeck] backend=tmux mode=simulate proto=v4
 [agentdeck] config: defaults, 8 prompt presets
-[agentdeck] commands: select N | start | approve | always | deny | interrupt | enter | mode | auto | focus | next | prev | scroll N | preset N | send | prompt TEXT | spawn [KIND] | all approve|deny|interrupt|send | keys K.. | btn NAME [up|down] | enc NAME N | key N | page N | quit
-[frame] HELLO_ACK proto=3
+[agentdeck] commands: select N | start | approve | always | deny | interrupt | enter | mode | auto | focus | next | prev | scroll N | preset N | send | prompt TEXT | spawn [KIND] | all approve|deny|interrupt|send | keys K.. | btn NAME [up|down] | enc NAME N | key N | page N | view | repeat | move N | copy | quit
+[frame] HELLO_ACK proto=4
 [discover] slot 0: a-claude-approval (id=%0, kind=claude)
 [discover] slot 1: b-spinner (id=%1, kind=shell)
 [discover] slot 2: c-idle (id=%2, kind=shell)
@@ -20,6 +20,7 @@
 [frame] DETAIL line=4: to do differently
 [frame] DETAIL line=5: choice:
 [frame] FOOTER idle: P1/8 continue
+[frame] BTNLEDS (all the device's)
 [state] slot 1 b-spinner: IDLE -> WORKING
 [frame] SLOT slot=1 state=WORKING kind=shell name=b-spinner
 [select] slot 0 (a-claude-approval)

@@ -31,8 +31,14 @@ does (the full table is in README.md):
     REC / FX / ENV + key   approve / deny / interrupt that agent
     SEQ + key N            send prompt preset N to the selected agent
     SEL + key N            answer option N (types the digit 1-9)
-  MENU page (ALGORITHM): SELECT moves, SEL picks, FX backs out - new
-    agent, send prompt, event log, close agent, settings, help.
+    PLAY + key             start that agent / spawn one on an empty key
+    SAVE + key             move the selected agent to that key
+    SEQ held ~1 s          repeat the armed prompt at this agent each time
+                           it finishes a turn (again to stop)
+    EDIT on DETAIL         flip between the agent's OUTPUT and INFO (what
+                           it was asked, what it wants, context size, git)
+  MENU page (ALGORITHM): SELECT moves, SEL picks, FX backs out - this
+    agent, new agent, send prompt, event log, close agent, settings, help.
 
 Core uses only the Python 3 standard library. Real-MIDI mode additionally
 needs `mido` (+ `python-rtmidi`), imported lazily, so `--simulate` runs
@@ -48,7 +54,8 @@ Simulate mode reads commands from stdin, one per line:
   select N | start | approve | always | deny | interrupt | enter | mode
   auto | focus | next | prev | scroll N | preset N | send | prompt TEXT
   spawn [KIND] | all approve|deny|interrupt|send | keys K [K...]
-  btn NAME [up|down] | enc NAME N | key N [up] | page N | quit
+  btn NAME [up|down] | enc NAME N | key N [up] | page N
+  view | repeat | move N | copy | quit
 (`btn` / `enc` / `key` / `page` replay a panel control exactly as the FM-1
 would send it; `btn NAME` alone is a tap, down then up.)
 """
@@ -57,6 +64,7 @@ import argparse
 import json
 import os
 import collections
+import glob
 import queue
 import re
 import shutil
@@ -68,7 +76,7 @@ import threading
 import time
 import types
 
-PROTO_VERSION = 3
+PROTO_VERSION = 4
 
 # --- protocol constants (PROTOCOL.md) ---------------------------------------
 CH = 0x0F                      # MIDI channel 16 (low nibble)
@@ -77,16 +85,17 @@ CC_FRAME_DATA = 119
 FRAME_END = 0x20
 FRAME_RESET = 0x7F
 FT_SLOT, FT_DETAIL, FT_META, FT_FOOTER, FT_BEEP, FT_SELECT, FT_TEXT, \
-    FT_PAGE, FT_KEYLEDS, FT_HELLO_ACK = \
-    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0F
+    FT_PAGE, FT_KEYLEDS, FT_BTNLEDS, FT_HELLO_ACK = \
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0F
 CC_PAGE = 121
 PAGE_GRID, PAGE_DETAIL, PAGE_APPROVALS, PAGE_MENU = 0, 1, 2, 3
 MENU_ROWS = 7                  # rows under the MENU page's title
-KIND_AUTO = 0x40               # SLOT kind-byte flag (v2 devices only)
+KIND_AUTO = 0x40               # SLOT kind-byte flag (v2+ devices only)
+KIND_LOOP = 0x20               # ... repeat mode (v4+ devices only)
 MAX_FRAME = 48
 MAX_SLOTS = 54
 COLS = 29                      # characters across the FM-1's text area
-DETAIL_ROWS = {1: 8, 2: 6, 3: 6}   # detail lines the device shows, by protocol
+DETAIL_ROWS = {1: 8, 2: 6, 3: 6, 4: 6}   # detail lines the device shows, by protocol
 
 STATES = ["EMPTY", "IDLE", "WORKING", "BLOCKED", "DONE", "ERROR", "UNKNOWN"]
 ST = {name: i for i, name in enumerate(STATES)}
@@ -106,6 +115,8 @@ BEEP_ATTENTION, BEEP_DONE, BEEP_ERROR, BEEP_ACK = 1, 2, 3, 4
 T_CURSOR, T_TEXT = 5, 6
 # key LED modes in a KEYLEDS frame
 L_OFF, L_GLOW, L_ON, L_BLINK = 0, 1, 2, 3
+# button LED modes in a BTNLEDS frame (0 = the device decides)
+B_DEVICE, B_OFF, B_ON, B_BLINK, B_GLOW = 0, 1, 2, 3, 4
 
 DEFAULT_CONFIG = {
     # Prompt presets: PRESETS arms one, SEQ sends it. A string, or
@@ -136,6 +147,12 @@ DEFAULT_CONFIG = {
     "spawn_cwd": None,
     # Extra directories offered by MENU > NEW AGENT.
     "projects": [],
+    # Repeat mode stops by itself after this many sends.
+    "repeat_max": 10,
+    # Chime again every N minutes while an agent stays BLOCKED (0 = off).
+    "nag_minutes": 0,
+    # MENU > THIS AGENT > OPEN FOLDER runs this with the directory.
+    "open_cmd": "open" if sys.platform == "darwin" else "xdg-open",
     "sounds": True,            # chimes on BLOCKED / DONE / ERROR
     "focus_on_edit": True,     # EDIT also focuses the pane on the computer
 }
@@ -269,9 +286,10 @@ class SimulateLink:
         if ftype == FT_SLOT and len(payload) >= 3:
             slot, state, kind = payload[0], payload[1], payload[2]
             name = payload[3:].decode("ascii", "replace")
-            print("[frame] SLOT slot=%d state=%s kind=%s%s name=%s"
-                  % (slot, STATES[state], KINDS[kind & 0x3F],
-                     " auto" if kind & KIND_AUTO else "", name))
+            print("[frame] SLOT slot=%d state=%s kind=%s%s%s name=%s"
+                  % (slot, STATES[state], KINDS[kind & 0x1F],
+                     " auto" if kind & KIND_AUTO else "",
+                     " loop" if kind & KIND_LOOP else "", name))
         elif ftype == FT_DETAIL and len(payload) >= 1:
             print("[frame] DETAIL line=%d: %s"
                   % (payload[0], payload[1:].decode("ascii", "replace")))
@@ -296,6 +314,11 @@ class SimulateLink:
         elif ftype == FT_KEYLEDS:
             print("[frame] KEYLEDS %s" % "".join(
                 ".o#*"[b] if b < 4 else "?" for b in payload))
+        elif ftype == FT_BTNLEDS:
+            print("[frame] BTNLEDS %s" % (" ".join(
+                "%s=%s" % (BTN_NAMES[i], ["", "off", "on", "blink", "glow"][b])
+                for i, b in enumerate(payload[:14]) if 0 < b < 5) or
+                "(all the device's)"))
         elif ftype == FT_HELLO_ACK:
             print("[frame] HELLO_ACK proto=%d" % (payload[0] if payload else 0))
         else:
@@ -648,8 +671,11 @@ class HerdrBackend:
         ws = workspaces.get(raw.get("workspace_id")) or {}
         name = ws.get("label") or \
             os.path.basename(cwd.rstrip("/")) or agent or aid
+        sess = raw.get("agent_session")
         return {"id": aid, "name": str(name), "kind": kind, "state": state,
-                "cwd": cwd}
+                "cwd": cwd,
+                "session": str(sess.get("value")) if isinstance(sess, dict)
+                and sess.get("value") else None}
 
     def list_agents(self):
         res = self.request("pane.list")
@@ -765,6 +791,181 @@ def default_herdr_socket(session=None):
     return os.path.expanduser("~/.config/herdr/herdr.sock")
 
 
+# --- insight: what an agent is up to, beyond its terminal ---------------------
+# Claude Code keeps a JSONL log per session under ~/.claude/projects/. It is
+# an internal format, so everything here is best effort: any surprise just
+# means less to show. Only the tail of the file is read, and nothing is ever
+# written.
+
+CLAUDE_PROJECTS = "~/.claude/projects"
+_session_paths = {}
+_insight_cache = {}            # path -> ((mtime, size), info)
+_git_cache = {}                # cwd -> (time, text)
+
+
+def claude_session_path(agent):
+    sid = agent.get("session")
+    root = os.path.expanduser(CLAUDE_PROJECTS)
+    if sid:
+        if sid not in _session_paths:
+            hits = glob.glob(os.path.join(root, "*", sid + ".jsonl"))
+            if not hits:
+                return None            # not written yet: look again later
+            _session_paths[sid] = hits[0]
+        return _session_paths[sid]
+    cwd = agent.get("cwd")
+    if not cwd:
+        return None
+    # No session id (tmux): the newest log of that directory's project.
+    logs = glob.glob(os.path.join(
+        root, re.sub(r"[^A-Za-z0-9]", "-", cwd), "*.jsonl"))
+    return max(logs, key=os.path.getmtime) if logs else None
+
+
+def tool_summary(name, inp):
+    """A tool call in a few words: `Bash npm test`, `Edit agentdeck.py`."""
+    inp = inp if isinstance(inp, dict) else {}
+    for key in ("command", "file_path", "path", "pattern", "url", "query",
+                "description", "prompt"):
+        if inp.get(key):
+            val = str(inp[key])
+            if key in ("file_path", "path"):
+                val = os.path.basename(val.rstrip("/")) or val
+            return "%s %s" % (name, val)
+    return str(name)
+
+
+def claude_insight(agent, tail_bytes=768 * 1024):
+    """{title, prompt, mode, model, ctx, pending, doing, said, todo} from the
+    session log, or {}."""
+    if agent.get("kind") != "claude":
+        return {}
+    try:
+        path = claude_session_path(agent)
+        if not path:
+            return {}
+        st = os.stat(path)
+        sig = (st.st_mtime, st.st_size)
+        hit = _insight_cache.get(path)
+        if hit and hit[0] == sig:
+            return hit[1]
+        with open(path, "rb") as f:
+            if st.st_size > tail_bytes:
+                f.seek(st.st_size - tail_bytes)
+                f.readline()                   # drop the partial line
+            raw = f.read().decode("utf-8", "replace")
+    except OSError:
+        return {}
+    info = {}
+    open_tools = {}                            # tool_use id -> summary
+    for line in raw.splitlines():
+        if len(line) > 400000:
+            continue                           # request blobs: not for us
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(d, dict):
+            continue
+        t = d.get("type")
+        if t == "ai-title" and d.get("aiTitle"):
+            info["title"] = str(d["aiTitle"])
+        elif t == "last-prompt" and d.get("lastPrompt"):
+            info["prompt"] = str(d["lastPrompt"])
+        elif t == "permission-mode" and d.get("permissionMode"):
+            info["mode"] = str(d["permissionMode"])
+        elif t in ("assistant", "user") and not d.get("isSidechain"):
+            msg = d.get("message") if isinstance(d.get("message"), dict) \
+                else {}
+            content = msg.get("content")
+            if t == "assistant":
+                if msg.get("model"):
+                    info["model"] = str(msg["model"])
+                u = msg.get("usage") if isinstance(msg.get("usage"), dict) \
+                    else {}
+                ctx = sum(int(u.get(k) or 0) for k in (
+                    "input_tokens", "cache_creation_input_tokens",
+                    "cache_read_input_tokens"))
+                if ctx:
+                    info["ctx"] = ctx
+            for block in content if isinstance(content, list) else []:
+                if not isinstance(block, dict):
+                    continue
+                bt = block.get("type")
+                if bt == "text" and t == "assistant" and \
+                        str(block.get("text") or "").strip():
+                    info["said"] = str(block["text"]).strip()
+                elif bt == "tool_use":
+                    summary = tool_summary(block.get("name"),
+                                           block.get("input"))
+                    open_tools[block.get("id")] = summary
+                    info["doing"] = summary
+                    todos = (block.get("input") or {}).get("todos") \
+                        if isinstance(block.get("input"), dict) else None
+                    if isinstance(todos, list) and todos:
+                        done = sum(1 for x in todos if isinstance(x, dict)
+                                   and x.get("status") == "completed")
+                        cur = next((x for x in todos if isinstance(x, dict)
+                                    and x.get("status") == "in_progress"),
+                                   None)
+                        info["todo"] = "%d/%d%s" % (
+                            done, len(todos), ": %s" % (
+                                cur.get("activeForm") or cur.get("content"))
+                            if cur else "")
+                elif bt == "tool_result":
+                    open_tools.pop(block.get("tool_use_id"), None)
+    if open_tools:
+        info["pending"] = list(open_tools.values())[-1]
+    _insight_cache[path] = (sig, info)
+    return info
+
+
+def git_summary(cwd):
+    """`main +2 ~5 ^1`: branch, untracked, changed, ahead. Cached 5 s."""
+    if not cwd or not os.path.isdir(cwd):
+        return ""
+    hit = _git_cache.get(cwd)
+    if hit and time.time() - hit[0] < 5.0:
+        return hit[1]
+    text = ""
+    try:
+        p = subprocess.run(
+            ["git", "-C", cwd, "status", "--porcelain=v2", "--branch"],
+            capture_output=True, text=True, timeout=3)
+        if p.returncode == 0:
+            branch, ahead, new, changed = "?", 0, 0, 0
+            for ln in p.stdout.splitlines():
+                if ln.startswith("# branch.head "):
+                    branch = ln.split(" ", 2)[2]
+                elif ln.startswith("# branch.ab "):
+                    ahead = int(ln.split()[2].lstrip("+") or 0)
+                elif ln.startswith("?"):
+                    new += 1
+                elif ln[:1] in "12u":
+                    changed += 1
+            text = branch + (" +%d" % new if new else "") + \
+                (" ~%d" % changed if changed else "") + \
+                (" ^%d" % ahead if ahead else "")
+            if not (new or changed or ahead):
+                text += " clean"
+    except (OSError, ValueError, subprocess.SubprocessError):
+        pass
+    _git_cache[cwd] = (time.time(), text)
+    return text
+
+
+def fmt_tokens(n):
+    return "%dk" % round(n / 1000.0) if n >= 1000 else str(n)
+
+
+def copy_to_clipboard(text):
+    for cmd in (["pbcopy"], ["wl-copy"], ["xclip", "-selection", "clipboard"]):
+        if shutil.which(cmd[0]):
+            subprocess.run(cmd, input=text.encode(), timeout=5, check=True)
+            return True
+    return False
+
+
 # --- daemon -----------------------------------------------------------------
 
 # A numbered "yes, and stop asking" option in a permission prompt, e.g.
@@ -777,7 +978,8 @@ ALWAYS_RE = re.compile(
 # Which states an action makes sense for when it is applied to every agent.
 FLEET_STATES = {"approve": ("BLOCKED",), "deny": ("BLOCKED",),
                 "interrupt": ("WORKING",), "send": ("IDLE", "DONE")}
-CHORD_BUTTONS = ("REC", "FX", "ENV", "SEQ", "SEL")
+CHORD_BUTTONS = ("REC", "FX", "ENV", "SEQ", "SEL", "PLAY", "SAVE")
+LONG_PRESS = 0.7               # seconds: SEQ held this long = repeat mode
 CHORD_ACTION = {"REC": "approve", "FX": "deny", "ENV": "interrupt"}
 HELP_LINES = [
     "KEYS      pick an agent", "PLAY      start / spawn", "REC       approve",
@@ -789,6 +991,8 @@ HELP_LINES = [
     "GLO+btn   for all agents", "REC+key   approve that one",
     "FX+key    deny that one", "ENV+key   stop that one",
     "SEQ+key   send preset N", "SEL+key   answer option N",
+    "PLAY+key  start / spawn there", "SAVE+key  move agent there",
+    "SEQ held  repeat the prompt", "EDIT x2   output / info view",
     "MASTER    chime volume"]
 SLOTS_FILE = "~/.config/agentdeck/slots.json"
 
@@ -827,9 +1031,15 @@ class Daemon:
         self.spawn_slot = None     # (slot, deadline): where a spawn lands
         self.scroll = 0            # detail lines scrolled back from the end
         self.detail_all = []       # the selected agent's wrapped lines
-        self.dev_proto = 3 if simulate else 1   # until the device says
+        self.dev_proto = PROTO_VERSION if simulate else 1   # until it says
         self.dev_page = PAGE_GRID  # the page the device shows (CC 121)
-        self.chord = None          # {"name", "used", "fleet"}: a held button
+        self.chord = None          # {"name", "used", "fleet", "t"}: a held button
+        self.view = "output"       # DETAIL shows: "output" | "info"
+        self.repeat = {}           # agent id -> {"text", "label", "n", "due"}
+        self.blocked_since = {}    # agent id -> when it became BLOCKED
+        self.last_nag = 0.0
+        self.sent_btnleds = None
+        self.always_ready = False  # the selected prompt has an "always" option
         self.menu = []             # MENU page: a stack of [builder, cursor]
         self.sent_text = {}        # MENU line -> (style, text) last framed
         self.events = collections.deque(maxlen=40)   # (time, text)
@@ -894,17 +1104,95 @@ class Daemon:
                                 line.encode("ascii", "replace"))
                 self.sent_detail[i] = line
 
+    def info_lines(self, a):
+        """The INFO view: what the agent is about, not what it printed."""
+        i = claude_insight(a)
+        out = []
+        if i.get("title"):
+            out.append(i["title"])
+        head = " ".join(x for x in (
+            i.get("model", "").replace("claude-", ""),
+            "ctx %s" % fmt_tokens(i["ctx"]) if i.get("ctx") else "") if x)
+        if head:
+            out.append(head)
+        git = git_summary(a.get("cwd"))
+        tail = " ".join(x for x in (
+            "mode %s" % i["mode"] if i.get("mode") else "",
+            "git %s" % git if git else "") if x)
+        if tail:
+            out.append(tail)
+        if a["id"] in self.repeat:
+            r = self.repeat[a["id"]]
+            out.append("REPEAT %d/%d: %s" % (
+                r["n"], self._repeat_max(), r["label"]))
+        if i.get("prompt"):
+            out.append("ASKED: " + i["prompt"])
+        if a["state"] == "BLOCKED" and i.get("pending"):
+            out.append("WANTS: " + i["pending"])
+        elif a["state"] == "WORKING" and i.get("doing"):
+            out.append("DOING: " + i["doing"])
+        if i.get("todo"):
+            out.append("TODO " + i["todo"])
+        if i.get("said"):
+            out.append("SAID: " + i["said"][:600])
+        if not i:
+            out.insert(0, "%s in %s" % (a["kind"], os.path.basename(
+                (a.get("cwd") or "").rstrip("/")) or "?"))
+            out.append("(no session details yet)" if a["kind"] == "claude"
+                       else "(session details: Claude Code only)")
+        return wrap_lines(out)
+
     def refresh_detail(self, force=False):
         a = self.roster.get(self.selected)
+        raw = []
         if a:
             try:
-                self.detail_all = wrap_lines(
-                    self.backend.read_lines(a["id"], 200))
+                raw = self.backend.read_lines(a["id"], 200)
             except Exception:
-                self.detail_all = []
-        else:
-            self.detail_all = []
+                raw = []
+        # SAVE can only do something when the prompt offers "always".
+        self.always_ready = bool(a and a["state"] == "BLOCKED" and any(
+            ALWAYS_RE.match(ln.strip()) for ln in raw[-30:]))
+        if a and self.view == "info":
+            before = len(self.detail_all)
+            self.detail_all = self.info_lines(a)
+            if self.scroll == 0 and len(self.detail_all) != before:
+                force = True
+            # INFO reads from the top; scroll counts lines down from there.
+            rows = DETAIL_ROWS.get(self.dev_proto, 6)
+            top = max(0, min(self.scroll, max(0, len(self.detail_all) - rows)))
+            self.scroll = top
+            window = self.detail_all[top:top + rows]
+            window += [""] * (rows - len(window))
+            for n, line in enumerate(window):
+                if force or self.sent_detail.get(n) != line:
+                    self.link.frame(FT_DETAIL, bytes([n]) +
+                                    line.encode("ascii", "replace"))
+                    self.sent_detail[n] = line
+            return
+        self.detail_all = wrap_lines(raw) if a else []
         self._send_detail(force)
+
+    def toggle_view(self):
+        self.view = "info" if self.view == "output" else "output"
+        self.scroll = 0
+        print("[view] %s" % self.view)
+        self.refresh_detail()
+        self.toast("VIEW: %s" % self.view.upper(), F_INFO, 1.5)
+
+    def _send_btnleds(self, force=False):
+        """The button LEDs the host owns: SEQ while the selected agent is
+        on repeat, SAVE blinking when "always" is on offer."""
+        a = self.roster.get(self.selected)
+        leds = [B_DEVICE] * 14
+        if a and a["id"] in self.repeat:
+            leds[BTN_NAMES.index("SEQ")] = B_ON
+        if self.always_ready:
+            leds[BTN_NAMES.index("SAVE")] = B_BLINK
+        leds = bytes(leds)
+        if force or leds != self.sent_btnleds:
+            self.link.frame(FT_BTNLEDS, leds)
+            self.sent_btnleds = leds
 
     # -- slots that survive a daemon restart --
     def _load_slots(self):
@@ -965,6 +1253,8 @@ class Daemon:
         for aid in [k for k in self.slots if k not in live]:
             slot = self.slots.pop(aid)
             self.auto.discard(aid)
+            self.repeat.pop(aid, None)
+            self.blocked_since.pop(aid, None)
             self.prev_state.pop(aid, None)
             print("[gone] slot %d: %s" % (slot, aid))
         if self.slots != before:
@@ -1004,7 +1294,9 @@ class Daemon:
                 self.selected not in self.roster:
             self.selected = min(self.roster)   # a v1 device never says
         self._auto_approve(agents)
+        self._repeat_step(agents)
         self._notify(agents)
+        self._nag(agents)
 
         full = self.need_reset or time.time() - self.last_full > 10.0
         if self.need_reset:
@@ -1028,7 +1320,8 @@ class Daemon:
                     self.sent.pop(slot, None)
                 continue
             auto = a["id"] in self.auto
-            sig = (a["state"], a["kind"], a["name"], auto)
+            loop = a["id"] in self.repeat
+            sig = (a["state"], a["kind"], a["name"], auto, loop)
             if old is None or old[0] != a["state"]:
                 print("[state] slot %d %s: %s -> %s"
                       % (slot, a["name"], old[0] if old else "NONE",
@@ -1037,6 +1330,8 @@ class Daemon:
                 kind = KIND_CODE[a["kind"]]
                 if auto and self.dev_proto >= 2:
                     kind |= KIND_AUTO
+                if loop and self.dev_proto >= 4:
+                    kind |= KIND_LOOP
                 payload = bytes([slot, ST[a["state"]], kind]) + \
                     clean_text(a["name"], 44).encode("ascii", "replace")
                 self.link.frame(FT_SLOT, payload)
@@ -1046,6 +1341,7 @@ class Daemon:
             self.sent_footer = None
             self.sent_text.clear()
         self._send_footer()
+        self._send_btnleds(force=full)
         if self.dev_page == PAGE_MENU:
             self._menu_render()                # its ages and names move
 
@@ -1075,7 +1371,10 @@ class Daemon:
             if a["state"] in ("BLOCKED", "ERROR", "DONE"):
                 self.log_event("%s %s" % (a["name"], a["state"]))
             if a["state"] == "BLOCKED" and a["id"] not in self.auto:
-                ev = (0, BEEP_ATTENTION, "%s NEEDS YOU" % a["name"], F_WARN)
+                want = claude_insight(a).get("pending")
+                ev = (0, BEEP_ATTENTION,
+                      "%s: %s" % (a["name"][:10], want) if want
+                      else "%s NEEDS YOU" % a["name"], F_WARN)
             elif a["state"] == "ERROR":
                 ev = (1, BEEP_ERROR, "%s ERROR" % a["name"], F_BAD)
             elif a["state"] == "DONE":
@@ -1086,6 +1385,147 @@ class Daemon:
                 best = ev
         if best:
             self.toast(best[2], best[3], 4.0, beep=best[1])
+
+    def _repeat_max(self):
+        try:
+            return max(1, int(self.cfg.get("repeat_max", 10)))
+        except (TypeError, ValueError):
+            return 10
+
+    def _repeat_step(self, agents):
+        """Repeat mode: each time the agent comes to rest, send the prompt
+        again (2 s later, so a human can still get a word in)."""
+        now = time.time()
+        for a in agents:
+            r = self.repeat.get(a["id"])
+            if not r:
+                continue
+            old = self.prev_state.get(a["id"])
+            resting = a["state"] in ("IDLE", "DONE")
+            if a["state"] == "ERROR":
+                del self.repeat[a["id"]]
+                self.toast("REPEAT OFF %s (ERROR)" % a["name"], F_BAD)
+                continue
+            if resting and old == "WORKING" and not r["due"]:
+                r["due"] = now + 2.0
+                self.poll_soon = r["due"]
+            if resting and r["due"] and now >= r["due"]:
+                r["due"] = 0.0
+                if r["n"] >= self._repeat_max():
+                    del self.repeat[a["id"]]
+                    print("[repeat] done for %s" % a["name"])
+                    self.toast("REPEAT DONE %s" % a["name"], F_GOOD, 4.0,
+                               beep=BEEP_DONE)
+                    self.log_event("%s repeat done" % a["name"])
+                    continue
+                r["n"] += 1
+                print("[repeat] %d/%d -> %s" % (r["n"], self._repeat_max(),
+                                                a["name"]))
+                if self._run(a, "prompt", r["text"]):
+                    self.toast("REPEAT %d/%d > %s" % (
+                        r["n"], self._repeat_max(), a["name"]), F_INFO, 2.0)
+                self.poll_soon = now + 0.4
+
+    def toggle_repeat(self):
+        a = self.roster.get(self.selected)
+        if not a:
+            self.toast("SLOT %02d IS EMPTY" % self.selected, F_WARN)
+            return
+        if a["id"] in self.repeat:
+            del self.repeat[a["id"]]
+            print("[repeat] off for %s" % a["name"])
+            self.toast("REPEAT OFF %s" % a["name"], F_INFO)
+        else:
+            p = self.presets[self.preset]
+            # At rest already? Then the first send is due right away.
+            due = time.time() if a["state"] in ("IDLE", "DONE") else 0.0
+            self.repeat[a["id"]] = {"text": p["text"], "label": p["label"],
+                                    "n": 0, "due": due}
+            print("[repeat] ON for %s: %s" % (a["name"], p["label"]))
+            self.toast("REPEAT P%d x%d %s" % (
+                self.preset + 1, self._repeat_max(), a["name"]), F_WARN)
+            self.log_event("%s repeat on" % a["name"])
+        self.poll_soon = time.time()
+
+    def _nag(self, agents):
+        """Chime again while someone has been BLOCKED for a long time."""
+        now = time.time()
+        live = set()
+        for a in agents:
+            if a["state"] == "BLOCKED" and a["id"] not in self.auto:
+                live.add(a["id"])
+                self.blocked_since.setdefault(a["id"], now)
+        for aid in [k for k in self.blocked_since if k not in live]:
+            del self.blocked_since[aid]
+        try:
+            every = float(self.cfg.get("nag_minutes") or 0) * 60.0
+        except (TypeError, ValueError):
+            every = 0.0
+        if every <= 0 or not self.blocked_since:
+            return
+        oldest = min(self.blocked_since, key=self.blocked_since.get)
+        waited = now - self.blocked_since[oldest]
+        if waited >= every and now - self.last_nag >= every:
+            self.last_nag = now
+            name = next((a["name"] for a in agents if a["id"] == oldest), "?")
+            self.toast("STILL WAITING %s %s" % (fmt_age(waited), name),
+                       F_WARN, 4.0, beep=BEEP_ATTENTION)
+
+    def move_agent(self, dst):
+        """SAVE + key: the selected agent takes that key (a swap if it is
+        taken)."""
+        a = self.roster.get(self.selected)
+        if not a:
+            self.toast("SLOT %02d IS EMPTY" % self.selected, F_WARN)
+            return
+        src = self.selected
+        if dst == src or not 0 <= dst < MAX_SLOTS:
+            return
+        other = self.roster.get(dst)
+        self.slots[a["id"]] = dst
+        if other:
+            self.slots[other["id"]] = src
+        self.used.update((src, dst))
+        self.roster = {self.slots[x["id"]]: x for x in self.roster.values()}
+        self.selected = dst
+        self._save_slots()
+        print("[move] %s: slot %d -> %d%s" % (
+            a["name"], src, dst, " (swapped with %s)" % other["name"]
+            if other else ""))
+        self.link.frame(FT_SELECT, bytes([dst]))
+        self.toast("MOVED %s > %02d" % (a["name"], dst), F_GOOD)
+        self.poll_soon = time.time()
+
+    def copy_reply(self):
+        a = self.roster.get(self.selected)
+        if not a:
+            return
+        text = claude_insight(a).get("said")
+        if not text:
+            try:
+                text = "\n".join(self.backend.read_lines(a["id"], 60))
+            except Exception:
+                text = ""
+        try:
+            ok = bool(text) and copy_to_clipboard(text)
+        except Exception:
+            ok = False
+        self.toast("COPIED %d CHARS" % len(text) if ok else "NOTHING COPIED",
+                   F_GOOD if ok else F_WARN)
+
+    def open_folder(self):
+        a = self.roster.get(self.selected)
+        cmd = str(self.cfg.get("open_cmd") or "").split()
+        if not a or not a.get("cwd") or not cmd:
+            self.toast("NOTHING TO OPEN", F_WARN)
+            return
+        try:
+            subprocess.Popen(cmd + [a["cwd"]], stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+            self.toast("OPENED %s" % os.path.basename(
+                a["cwd"].rstrip("/")), F_GOOD)
+        except OSError as e:
+            self._fail("open", e)
 
     # -- actions --
     def _fail(self, what, err):
@@ -1116,6 +1556,15 @@ class Daemon:
                 self.toast("SLOT %02d IS EMPTY" % slot, F_WARN)
             return
         print("[action] %s -> slot %d (%s)" % (action, slot, a["name"]))
+        if action == "start" and a["kind"] == "shell":
+            # A bare shell: PLAY types the default agent's command into it.
+            kind = self.cfg.get("default_agent") or "claude"
+            command = (self.cfg.get("agents") or {}).get(kind)
+            if not command:
+                self.toast("NO COMMAND FOR %s" % kind.upper(), F_BAD)
+                return
+            action, arg, label = "prompt", command, "STARTING %s IN" % \
+                kind.upper()
         if self._run(a, action, arg):
             done = label or PAST.get(action, action.upper())
             self.toast("%s %s" % (done, a["name"]), F_GOOD, 2.0)
@@ -1233,7 +1682,7 @@ class Daemon:
             self._fail("close", e)
         self.poll_soon = time.time() + 0.3
 
-    def spawn(self, kind=None, cwd=None):
+    def spawn(self, kind=None, cwd=None, slot=None):
         kind = kind or self.cfg.get("default_agent") or "claude"
         command = (self.cfg.get("agents") or {}).get(kind)
         if not command:
@@ -1245,15 +1694,17 @@ class Daemon:
             or os.path.expanduser("~")
         cwd = os.path.expanduser(cwd)
         label = os.path.basename(cwd.rstrip("/")) or kind
-        print("[spawn] %s in %s (slot %d)" % (command, cwd, self.selected))
+        print("[spawn] %s in %s (slot %d)" % (
+            command, cwd, self.selected if slot is None else slot))
         try:
             self.backend.spawn(command, cwd, label,
                                near=(near or {}).get("id"))
         except Exception as e:
             self._fail("spawn", e)
             return
-        if self.selected not in self.roster:
-            self.spawn_slot = (self.selected, time.time() + 15.0)
+        slot = self.selected if slot is None else slot
+        if slot not in self.roster:
+            self.spawn_slot = (slot, time.time() + 15.0)
         self.toast("STARTING %s" % kind.upper(), F_GOOD)
         self.log_event("%s started in %s" % (kind, label))
         self.poll_soon = time.time() + 0.5
@@ -1273,6 +1724,10 @@ class Daemon:
         if self.dev_proto < 2:
             return                             # a v1 device scrolls itself
         before = self.scroll
+        if self.view == "info":                # top-anchored: + is down
+            self.scroll = max(0, self.scroll + delta)
+            self.refresh_detail()
+            return
         self.scroll = max(0, self.scroll - delta * 2)
         self._send_detail()
         if self.scroll != before:
@@ -1380,12 +1835,27 @@ class Daemon:
 
     def _m_root(self):
         return "MENU - %s" % self._target(), [
+            ("THIS AGENT", self._menu_push(self._m_agent)),
             ("NEW AGENT", self._menu_push(self._m_new)),
             ("SEND PROMPT", self._menu_push(self._m_prompts)),
             ("EVENT LOG", self._menu_push(self._m_log)),
             ("CLOSE AGENT", self._menu_push(self._m_close)),
             ("SETTINGS", self._menu_push(self._m_settings)),
             ("HELP", self._menu_push(self._m_help))]
+
+    def _m_agent(self):
+        a = self.roster.get(self.selected)
+        if not a:
+            return "THIS AGENT", [("(no agent selected)", self._menu_back)]
+        return a["name"], [
+            ("VIEW: %s" % self.view.upper(), self.toggle_view),
+            ("REPEAT PROMPT: %s" % ("ON" if a["id"] in self.repeat
+                                    else "OFF"), self.toggle_repeat),
+            ("AUTO-APPROVE: %s" % ("ON" if a["id"] in self.auto
+                                   else "OFF"), self.toggle_auto),
+            ("FOCUS ON COMPUTER", self.focus),
+            ("COPY LAST REPLY", self.copy_reply),
+            ("OPEN FOLDER", self.open_folder)]
 
     def _m_new(self):
         dirs = []
@@ -1452,9 +1922,18 @@ class Daemon:
             self.sent_detail.clear()
             self.sent_meta = None
             self.poll_soon = time.time()
+        def nag():
+            steps = [0, 2, 5, 10]
+            cur = self.cfg.get("nag_minutes") or 0
+            self.cfg["nag_minutes"] = steps[
+                (steps.index(cur) + 1) % len(steps)] if cur in steps else 0
+            self.last_nag = 0.0
         on = lambda key: "ON" if self.cfg.get(key, True) else "OFF"  # noqa
+        nag_now = self.cfg.get("nag_minutes") or 0
         return "SETTINGS", [
             ("SOUNDS: %s" % on("sounds"), flip("sounds")),
+            ("NAG WHILE BLOCKED: %s" % ("%sM" % nag_now if nag_now
+                                        else "OFF"), nag),
             ("FOCUS ON EDIT: %s" % on("focus_on_edit"),
              flip("focus_on_edit")),
             ("AUTO-APPROVE OFF, ALL (%d)" % len(self.auto),
@@ -1486,6 +1965,11 @@ class Daemon:
                 leds[k] = L_ON if k == self.preset else L_GLOW
         elif name == "SEL":
             leds[:9] = [L_GLOW] * 9
+        elif name in ("PLAY", "SAVE"):         # where things are / could go
+            for k in range(27):
+                leds[k] = L_ON if base + k in self.roster else L_GLOW
+            if name == "SAVE" and self.selected // 27 == self.page:
+                leds[self.selected % 27] = L_BLINK
         self.link.frame(FT_KEYLEDS, bytes(leds))
 
     def _chord_key(self, name, k):
@@ -1501,6 +1985,13 @@ class Daemon:
         elif name == "SEL":
             if k < 9:
                 self.send_keys([str(k + 1)], "OPTION %d >" % (k + 1))
+        elif name == "PLAY":
+            if slot in self.roster:
+                self.do_action("start", slot=slot)
+            else:
+                self.spawn(slot=slot)
+        elif name == "SAVE":
+            self.move_agent(slot)
 
     def on_key(self, k):
         if self.held and self.dev_proto >= 3:
@@ -1522,7 +2013,12 @@ class Daemon:
             c = self.chord
             if c and c["name"] == name:
                 self.chord = None
-                if not c["used"]:              # a plain tap after all
+                if c["used"]:
+                    pass
+                elif name == "SEQ" and not c["fleet"] and \
+                        time.time() - c["t"] >= LONG_PRESS:
+                    self.toggle_repeat()       # held, no key: repeat mode
+                else:                          # a plain tap after all
                     self._press(name, c["fleet"])
             return
         self.held.add(name)
@@ -1532,9 +2028,14 @@ class Daemon:
                 self._menu_back(),
                 self._menu_render() if self.dev_page == PAGE_MENU else None)
             return
+        if name == "EDIT" and self.dev_page == PAGE_DETAIL and \
+                self.dev_proto >= 3:
+            self.toggle_view()                 # EDIT again: the other view
+            return
         if name in CHORD_BUTTONS and self.dev_proto >= 3:
             # Wait for the release: keys tapped meanwhile make it a chord.
-            self.chord = {"name": name, "used": False, "fleet": fleet}
+            self.chord = {"name": name, "used": False, "fleet": fleet,
+                          "t": time.time()}
             self._chord_leds(name)
             return
         self._press(name, fleet)
@@ -1601,6 +2102,7 @@ class Daemon:
                 self.held.clear()
                 self.chord = None
                 self.sent_text.clear()
+                self.sent_btnleds = None
                 self.sent.clear()
                 self.sent_detail.clear()
                 self.sent_meta = None
@@ -1659,6 +2161,14 @@ class Daemon:
             self.toggle_auto()
         elif cmd == "focus":
             self.focus()
+        elif cmd == "view":
+            self.toggle_view()
+        elif cmd == "repeat":
+            self.toggle_repeat()
+        elif cmd == "move" and num() is not None:
+            self.move_agent(num())
+        elif cmd == "copy":
+            self.copy_reply()
         elif cmd in ("next", "prev"):
             self.jump_attention(1 if cmd == "next" else -1)
         elif cmd == "scroll":
@@ -1717,7 +2227,7 @@ SIM_HELP = ("select N | start | approve | always | deny | interrupt | enter"
             " | mode | auto | focus | next | prev | scroll N | preset N |"
             " send | prompt TEXT | spawn [KIND] | all approve|deny|interrupt"
             "|send | keys K.. | btn NAME [up|down] | enc NAME N |"
-            " key N | page N | quit")
+            " key N | page N | view | repeat | move N | copy | quit")
 
 
 def main(argv=None):
