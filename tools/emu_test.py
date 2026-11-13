@@ -17,8 +17,9 @@ What it does:
      HELLO_ACK, META, two SLOT frames (CLAUDE-1 working, CODEX-2
      blocked), four DETAIL lines for the selected agent, a FOOTER
      (the armed prompt preset) and a BEEP (the attention chime).
-  3. Turns the ALGORITHM encoder three times to walk GRID -> DETAIL ->
-     APPROVALS -> MENU (whose text the frame stream also carried).
+  3. Turns the ALGORITHM encoder to walk GRID -> DETAIL -> APPROVALS ->
+     MENU (whose text the frame stream also carried) -> ABOUT and back to
+     the GRID, then presses HOME there for the box view.
   4. Snapshots the LCD at each page and checks the run: clean exit, the
      CPU ran the full session without a halt (an unknown opcode or a
      wild jump halts the core, so a full-length run is the clean-decode
@@ -28,7 +29,8 @@ Usage:
   tools/get_emu.sh                 # one-time: fetch the fm1-emu binary
   python3 tools/emu_test.py        # full session -> build/emu-test/
   python3 tools/emu_test.py --boot-only   # quick boot check (~1/3 time)
-  python3 tools/emu_test.py --out docs    # regenerate the README shots
+
+The README's screenshots come from tools/emu_shots.py, not from here.
 
 fm1-emu binary lookup: $FM1_EMU, then tools/fm1-emu-bin/fm1-emu, then
 PATH. Note the x86-64 build interprets (no JIT yet): a 13 s emulated
