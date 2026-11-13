@@ -1,33 +1,28 @@
 # Agent Deck — an FM-1 control surface for coding agents
 
+![An FM-1 in White and Blue running Agent Deck. Its screen plays through the firmware: the splash, waiting for the host, the GRID with a blocked agent calling, DETAIL with the prompt, INFO and DIFF, APPROVALS and ALL CLEAR, the GRID as boxes, the MENU and ABOUT](docs/intro.gif)
+
 Custom firmware for the **M-VAVE FM-1** that turns the little FM synth into a
 hardware desk controller for CLI coding agents (Claude Code, Codex, …)
 running on your computer.
 
-![Agent Deck's screen, captured from the firmware package running in fm1-emu: the splash, the GRID as a list and as boxes, DETAIL, APPROVALS, the MENU and ABOUT](docs/emu-demo.gif)
-
-*The FM-1's 240×240 screen running firmware 0.6.1 — every frame is the
-LCD of the shipped package in [fm1-emu](#see-it-running--fm1-emu), not a
-drawing. All of the screens are in [the tour](#a-tour-of-the-screens)
-below.*
+*What the animation is: a picture of the FM-1 (White and Blue colorway) with
+Agent Deck's screen playing in its display — a visualization, not a
+video of the author's unit. The screen content is not a mockup: every
+frame is the LCD of firmware 0.6.1, captured from the shipped package
+running in [fm1-emu](#see-it-running--fm1-emu) and set into the display
+pixel for pixel. The firmware runs on a real FM-1 today; footage of it
+has yet to replace this. Each screen is shown full size in
+[the tour](#a-tour-of-the-screens) below.*
 
 ▶ **[Play Agent Deck live in your browser](https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt)**
 — a firmware package running in **fm1-emu** on this project's own player
 page. One click on **Start** and it plays a scripted session by itself:
 daemon frames in, pages walked, the blocked agent selected. The player
 still carries **firmware 0.1** (three plain pages), so it shows the
-panel and the protocol working, not the screens above.
+panel and the protocol working, not the screens above it here.
 (Device-only view for embedding elsewhere:
 [embed link](https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt&embed=1).)
-
-![An FM-1 in White and Blue running Agent Deck — the screen shows the firmware's GRID page: eight agents, web-frontend blocked and selected](docs/fm1-agent-deck-hero.jpg)
-
-*What that picture is: a visualization of the FM-1 (White and Blue colorway)
-running Agent Deck, not a photograph of the author's unit. The screen
-content is not a mockup — it is the GRID page of firmware 0.6.1, captured
-from the package running in [fm1-emu](#see-it-running--fm1-emu) and
-composited into the display. The firmware runs on a real FM-1 today; a
-photo of it has yet to replace this render.*
 
 ## Why an FM synth?
 
@@ -188,8 +183,9 @@ scripts drive it:
   CPU halt, a dead LCD or a blank page.
 - [`tools/emu_shots.py`](tools/emu_shots.py) is the **camera**: one
   short emulator run per scene (start-up, GRID, boxes, DETAIL,
-  APPROVALS, MENU, ABOUT), saving the `docs/shot-*.png` images and the
-  animation at the top of this page.
+  APPROVALS, MENU, ABOUT), saving the `docs/shot-*.png` images, then
+  playing sixteen of them in the display of the FM-1 picture to make
+  the animation at the top of this page (`docs/intro.gif`).
 
 **Run it yourself, in the browser:** this project hosts its own
 fm1-emu player (a vendored copy of the emulator whose only firmware
@@ -672,12 +668,13 @@ build/host/agentdeck build/host/agentdeck tests/agentdeck.txt
 # run this on the package you actually ship, after every release build
 sh tools/get_emu.sh                          # one-time
 python3 tools/emu_test.py                    # -> build/emu-test/*.png
-python3 tools/emu_shots.py                   # -> docs/shot-*.png, docs/emu-demo.gif
+python3 tools/emu_shots.py                   # -> docs/shot-*.png, docs/intro.gif
 ```
 
 `tools/emu_shots.py` is slow: each of its eight scenes is its own
 emulator run, a couple of minutes of CPU apiece on the author's Mac.
-Name scenes to redo just those (`tools/emu_shots.py grid about`).
+Name scenes to redo just those (`tools/emu_shots.py grid about`);
+`--intro-only` rebuilds the animation from the shots already there.
 
 Verified 2026-11-08 (firmware 0.1): the device build passes all of
 Dinghy's checks, the `.fwsc` parses under the installer's own
@@ -806,7 +803,7 @@ Limits, honestly:
   socket methods (see Troubleshooting).
 
 Roadmap ideas, in rough order: more hours on real hardware, and fixes →
-refreshing the browser player and the animation to the current firmware →
+refreshing the browser player to the current firmware →
 Firmware Hub listing (the Hub requires a package tested on real
 hardware; listing unlocks fm1-emu's one-click `?fw=` browser link from
 this README) → BLE MIDI transport → per-agent cost/token readouts on
@@ -828,11 +825,11 @@ menu-bar/status companion so the daemon can autostart.
 | `firmware/screen-grid.png` | The GRID page as rendered by the host harness |
 | `tools/emu_test.py` | fm1-emu device test: boots the packaged `.fwsc`, injects daemon frames, walks the pages, snapshots the LCD |
 | `tools/get_emu.sh` | Fetches the fm1-emu release binary into `tools/fm1-emu-bin/` |
-| `tools/emu_shots.py` | The screenshots: one fm1-emu run per scene on the packaged `.fwsc`, writing `docs/shot-*.png` and `docs/emu-demo.gif` |
+| `tools/emu_shots.py` | The screenshots: one fm1-emu run per scene on the packaged `.fwsc`, writing `docs/shot-*.png` and `docs/intro.gif` |
 | `docs/shot-*.png` | The 19 screens of [the tour](#a-tour-of-the-screens), as rendered by the packaged firmware in fm1-emu |
-| `docs/emu-demo.gif` | Nine of those screens as an animation, at the top of this README |
+| `docs/intro.gif` | The animation at the top of this README: sixteen of those screens playing in the display of the FM-1 picture |
 | `docs/play/` | The self-hosted live player: vendored fm1-emu (MIT) + Agent Deck catalog + the auto-play demo script, served by GitHub Pages |
-| `docs/fm1-agent-deck-hero.jpg` | Hero image: an FM-1 (White and Blue) with firmware 0.6.1's fm1-emu GRID page (`docs/shot-grid.png`) composited into its screen |
+| `docs/fm1-agent-deck-hero.jpg` | The FM-1 picture (White and Blue) the animation is built on, with the GRID page in its display |
 | `firmware-build/` | Dinghy tree + Agent Deck identity; `./build.sh` here |
 | `dist/agentdeck-0.6.1.fwsc` | The built firmware package, ready to flash, and the one installed on the author's FM-1 (`-0.6` … `-0.1`: earlier releases; the web player still runs 0.1) |
 | `host/config.example.json` | Example daemon config (prompt presets, default agent) |

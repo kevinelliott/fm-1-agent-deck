@@ -4,8 +4,8 @@
 Boots the newest dist/agentdeck-*.fwsc in fm1-emu once per scene, feeds it
 the frames a daemon would send for that scene (through the MIDI IN jack,
 as tools/emu_test.py does), presses what needs pressing, and saves the LCD
-as docs/shot-*.png (2x, crisp pixels). It also strings a few of them into
-docs/emu-demo.gif, the animation at the top of the README.
+as docs/shot-*.png (2x, crisp pixels). It also plays them in the display of
+the hero picture, as docs/intro.gif: the animation at the top of the README.
 
 Nothing here is drawn by hand: every image is the LCD of the firmware
 package itself. The scenes are made up (a fleet of eight agents with
@@ -16,6 +16,7 @@ Usage:
   python3 tools/emu_shots.py          # every scene -> docs/
   python3 tools/emu_shots.py grid about   # just these scenes
   python3 tools/emu_shots.py --out build/shots
+  python3 tools/emu_shots.py --intro-only  # just the animation, no emulator
 
 Requires Pillow.
 """
@@ -256,10 +257,15 @@ SCENES = {"boot": scene_boot, "empty": scene_empty, "grid": scene_grid,
           "boxes": scene_boxes, "detail": scene_detail,
           "approvals": scene_approvals, "menu": scene_menu,
           "about": scene_about}
-# the README's top animation: (shot, seconds)
-DEMO = [("splash", 1.2), ("grid", 2.2), ("boxes-8", 2.2),
-        ("detail-output", 2.2), ("detail-info", 1.8), ("approvals", 2.0),
-        ("all-clear", 1.6), ("menu", 1.6), ("about", 2.0)]
+# the README's intro animation: (shot, seconds)
+INTRO = [("splash", 1.6), ("no-host", 1.6), ("empty", 1.8), ("grid", 2.4),
+         ("grid-alert", 2.4), ("detail-output", 2.6), ("detail-info", 2.2),
+         ("detail-diff", 2.0), ("approvals", 2.2), ("all-clear", 1.8),
+         ("boxes-8", 2.4), ("boxes-16", 1.6), ("boxes-27", 1.6),
+         ("menu", 1.8), ("menu-settings", 1.8), ("about", 2.6)]
+HERO = "fm1-agent-deck-hero.jpg"        # the FM-1 the screens are set into
+HERO_LCD = (641, 319, 286)              # its display: x, y, size in pixels
+INTRO_W = 1600                          # at this width the LCD is 240 px: 1:1
 
 
 def run_scene(emu, fwsc, name, out):
@@ -289,19 +295,38 @@ def run_scene(emu, fwsc, name, out):
         return ok
 
 
-def make_gif(out):
+def make_intro(out):
+    """docs/intro.gif: the shots playing in the hero picture's display."""
     from PIL import Image
-    frames, times = [], []
-    for shot, secs in DEMO:
+    hero = Image.open(os.path.join(out, HERO)).convert("RGB")
+    k = INTRO_W / hero.width
+    hero = hero.resize((INTRO_W, round(hero.height * k)), Image.LANCZOS)
+    x, y, size = (round(v * k) for v in HERO_LCD)
+    hero.paste((5, 5, 7), (x - 2, y - 2, x + size + 2, y + size + 2))
+    screens, times = [], []
+    for shot, secs in INTRO:
         path = os.path.join(out, "shot-%s.png" % shot)
         if not os.path.isfile(path):
             return None
-        frames.append(Image.open(path).convert("P", palette=Image.ADAPTIVE,
-                                               colors=64))
+        screens.append(Image.open(path).convert("RGB").resize(
+            (size, size), Image.NEAREST))
         times.append(int(secs * 1000))
-    path = os.path.join(out, "emu-demo.gif")
+    # one palette for the photo and every screen, so no frame shifts colour
+    sheet = Image.new("RGB", (hero.width, hero.height + size * 3))
+    sheet.paste(hero, (0, 0))
+    for i, scr in enumerate(screens):
+        sheet.paste(scr, (i % 6 * size, hero.height + i // 6 * size))
+    pal = sheet.quantize(colors=255, method=Image.MEDIANCUT,
+                         dither=Image.NONE)
+    base = hero.quantize(palette=pal, dither=Image.FLOYDSTEINBERG)
+    frames = []
+    for scr in screens:                 # the screen itself: no dither, crisp
+        f = base.copy()
+        f.paste(scr.quantize(palette=pal, dither=Image.NONE), (x, y))
+        frames.append(f)
+    path = os.path.join(out, "intro.gif")
     frames[0].save(path, save_all=True, append_images=frames[1:],
-                   duration=times, loop=0, optimize=True)
+                   duration=times, loop=0, optimize=False)
     return path
 
 
@@ -312,7 +337,14 @@ def main():
     ap.add_argument("--fwsc", default=emu_test.newest_fwsc())
     ap.add_argument("--out", default=os.path.join(ROOT, "docs"))
     ap.add_argument("--emu", default=None)
+    ap.add_argument("--intro-only", action="store_true",
+                    help="rebuild intro.gif from the shots already in --out")
     args = ap.parse_args()
+    if args.intro_only:
+        gif = make_intro(args.out)
+        print("animation: %s" % (os.path.relpath(gif, ROOT) if gif
+                                 else "skipped (a shot is missing)"))
+        return 0 if gif else 1
     emu = args.emu or emu_test.find_emu()
     if not emu:
         print("fm1-emu not found: run tools/get_emu.sh", file=sys.stderr)
@@ -326,7 +358,7 @@ def main():
         print("scene %s (%s)" % (name, os.path.basename(args.fwsc)))
         ok = run_scene(emu, args.fwsc, name, args.out) and ok
     if not args.scenes:
-        gif = make_gif(args.out)
+        gif = make_intro(args.out)
         print("animation: %s" % (os.path.relpath(gif, ROOT) if gif
                                  else "skipped (a shot is missing)"))
     return 0 if ok else 1
