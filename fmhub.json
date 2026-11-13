@@ -1,0 +1,10 @@
+{
+  "what": "A control surface for coding agents, not an instrument: the keys and screen show which of your Claude Code, Codex or other command-line agents are working, finished or waiting on you, and the buttons approve, deny, interrupt and prompt them. It needs its daemon on the computer.",
+  "author": "Kevin Elliott",
+  "kinds": [
+    "other"
+  ],
+  "image": "docs/card.png",
+  "color": "#B48CFF",
+  "sounds": "none - all synthesised"
+}
