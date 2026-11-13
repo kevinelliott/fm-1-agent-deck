@@ -9,6 +9,12 @@
   "default_agent": "claude",
   "agents": {"claude": "claude", "codex": "codex"},
   "spawn_cwd": null,
+  "commands": ["/compact", "/clear", "/context", "/review"],
+  "ctx_window": 200000,
+  "ctx_warn_pct": 80,
+  "notify": false,
   "sounds": true,
+  "ui_sounds": true,
+  "alert": "loud",
   "focus_on_edit": true
 }

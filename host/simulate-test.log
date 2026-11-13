@@ -1,10 +1,13 @@
-[agentdeck] backend=tmux mode=simulate proto=v4
+[agentdeck] backend=tmux mode=simulate proto=v5
 [agentdeck] config: defaults, 8 prompt presets
-[agentdeck] commands: select N | start | approve | always | deny | interrupt | enter | mode | auto | focus | next | prev | scroll N | preset N | send | prompt TEXT | spawn [KIND] | all approve|deny|interrupt|send | keys K.. | btn NAME [up|down] | enc NAME N | key N | page N | view | repeat | move N | copy | quit
-[frame] HELLO_ACK proto=4
+[agentdeck] commands: select N | start | approve | always | deny | interrupt | enter | mode | auto | focus | next | prev | scroll N | preset N | send | prompt TEXT | spawn [KIND] | all approve|deny|interrupt|send | keys K.. | btn NAME [up|down] | enc NAME N | key N | page N | view | repeat | move N | copy | mark [N] | unmark | urgent | quit
+[frame] HELLO_ACK proto=5
 [discover] slot 0: a-claude-approval (id=%0, kind=claude)
 [discover] slot 1: b-spinner (id=%1, kind=shell)
 [discover] slot 2: c-idle (id=%2, kind=shell)
+[context] a-claude-approval is 96% full
+[frame] FOOTER warn: a-claude-approval CONTEXT 96%
+[frame] BEEP warn gain=44
 [frame] RESET (clear all slots)
 [frame] META agents=3 blocked=1
 [state] slot 0 a-claude-approval: NONE -> BLOCKED
@@ -13,19 +16,21 @@
 [frame] SLOT slot=1 state=IDLE kind=shell name=b-spinner
 [state] slot 2 c-idle: NONE -> IDLE
 [frame] SLOT slot=2 state=IDLE kind=shell name=c-idle
+[frame] GAUGE slot=0 96%
 [frame] DETAIL line=0: feature.
 [frame] DETAIL line=1: Do you want to proceed?
 [frame] DETAIL line=2: > 1. Yes
 [frame] DETAIL line=3: 2. No, and tell Claude what
 [frame] DETAIL line=4: to do differently
 [frame] DETAIL line=5: choice:
-[frame] FOOTER idle: P1/8 continue
+[frame] FOOTER warn: a-claude-approval CONTEXT 96%
 [frame] BTNLEDS (all the device's)
 [state] slot 1 b-spinner: IDLE -> WORKING
 [frame] SLOT slot=1 state=WORKING kind=shell name=b-spinner
 [select] slot 0 (a-claude-approval)
 [action] approve -> slot 0 (a-claude-approval)
 [frame] FOOTER good: APPROVED a-claude-approval
+[frame] BEEP up gain=28
 [frame] DETAIL line=0: > 1. Yes
 [frame] DETAIL line=1: 2. No, and tell Claude what
 [frame] DETAIL line=2: to do differently

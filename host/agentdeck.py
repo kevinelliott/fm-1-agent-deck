@@ -35,10 +35,17 @@ does (the full table is in README.md):
     SAVE + key             move the selected agent to that key
     SEQ held ~1 s          repeat the armed prompt at this agent each time
                            it finishes a turn (again to stop)
-    EDIT on DETAIL         flip between the agent's OUTPUT and INFO (what
-                           it was asked, what it wants, context size, git)
-  MENU page (ALGORITHM): SELECT moves, SEL picks, FX backs out - this
-    agent, new agent, send prompt, event log, close agent, settings, help.
+    EDIT on DETAIL         cycle the agent's OUTPUT, INFO (what it was
+                           asked, what it wants, context size, git) and
+                           DIFF (what it has changed in its repository)
+    LFO + key              mark / unmark that agent; while any are marked,
+                           GLO + button acts on the marked ones only
+                           (GLO + LFO clears the marks)
+    ARP + key              toggle auto-approve on that agent
+    HOME on the GRID       jump to the agent that has waited longest
+  MENU page (ALGORITHM): SELECT moves (K1: a page at a time), SEL picks,
+    FX backs out - this agent, fleet, new agent, send prompt, event log,
+    close agent, settings, help.
 
 Core uses only the Python 3 standard library. Real-MIDI mode additionally
 needs `mido` (+ `python-rtmidi`), imported lazily, so `--simulate` runs
@@ -55,7 +62,7 @@ Simulate mode reads commands from stdin, one per line:
   auto | focus | next | prev | scroll N | preset N | send | prompt TEXT
   spawn [KIND] | all approve|deny|interrupt|send | keys K [K...]
   btn NAME [up|down] | enc NAME N | key N [up] | page N
-  view | repeat | move N | copy | quit
+  view | repeat | move N | copy | mark [N] | unmark | urgent | quit
 (`btn` / `enc` / `key` / `page` replay a panel control exactly as the FM-1
 would send it; `btn NAME` alone is a tap, down then up.)
 """
@@ -76,7 +83,7 @@ import threading
 import time
 import types
 
-PROTO_VERSION = 4
+PROTO_VERSION = 5
 
 # --- protocol constants (PROTOCOL.md) ---------------------------------------
 CH = 0x0F                      # MIDI channel 16 (low nibble)
@@ -85,17 +92,19 @@ CC_FRAME_DATA = 119
 FRAME_END = 0x20
 FRAME_RESET = 0x7F
 FT_SLOT, FT_DETAIL, FT_META, FT_FOOTER, FT_BEEP, FT_SELECT, FT_TEXT, \
-    FT_PAGE, FT_KEYLEDS, FT_BTNLEDS, FT_HELLO_ACK = \
-    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0F
+    FT_PAGE, FT_KEYLEDS, FT_BTNLEDS, FT_GAUGE, FT_HELLO_ACK = \
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0F
 CC_PAGE = 121
 PAGE_GRID, PAGE_DETAIL, PAGE_APPROVALS, PAGE_MENU = 0, 1, 2, 3
 MENU_ROWS = 7                  # rows under the MENU page's title
 KIND_AUTO = 0x40               # SLOT kind-byte flag (v2+ devices only)
 KIND_LOOP = 0x20               # ... repeat mode (v4+ devices only)
+KIND_MARK = 0x10               # ... in the marked group (v5+ devices only)
+GAUGE_NONE = 0x7F              # GAUGE: nothing known about this slot
 MAX_FRAME = 48
 MAX_SLOTS = 54
 COLS = 29                      # characters across the FM-1's text area
-DETAIL_ROWS = {1: 8, 2: 6, 3: 6, 4: 6}   # detail lines the device shows, by protocol
+DETAIL_ROWS = {1: 8, 2: 6, 3: 6, 4: 6, 5: 6}   # detail lines the device shows, by protocol
 
 STATES = ["EMPTY", "IDLE", "WORKING", "BLOCKED", "DONE", "ERROR", "UNKNOWN"]
 ST = {name: i for i, name in enumerate(STATES)}
@@ -110,7 +119,12 @@ ENC_CC = {name: cc for cc, name in ENC_NAMES.items()}
 
 # footer styles / chimes (PROTOCOL.md)
 F_IDLE, F_INFO, F_GOOD, F_WARN, F_BAD = 0, 1, 2, 3, 4
-BEEP_ATTENTION, BEEP_DONE, BEEP_ERROR, BEEP_ACK = 1, 2, 3, 4
+BEEP_ATTENTION, BEEP_DONE, BEEP_ERROR, BEEP_ACK, BEEP_WARN = 1, 2, 3, 4, 5
+BEEP_TICK, BEEP_UP, BEEP_DOWN, BEEP_ALERT = 6, 7, 8, 9      # v5 devices
+UI_BEEPS = (BEEP_TICK, BEEP_UP, BEEP_DOWN)                  # feedback sounds
+# How loud each plays on a v5 device, in 64ths (64 = as the firmware has it).
+BEEP_GAIN = {BEEP_TICK: 20, BEEP_UP: 28, BEEP_DOWN: 28, BEEP_DONE: 40,
+             BEEP_WARN: 44, BEEP_ACK: 40, BEEP_ALERT: 112}
 # MENU text styles (the footer's five, plus:)
 T_CURSOR, T_TEXT = 5, 6
 # key LED modes in a KEYLEDS frame
@@ -153,7 +167,21 @@ DEFAULT_CONFIG = {
     "nag_minutes": 0,
     # MENU > THIS AGENT > OPEN FOLDER runs this with the directory.
     "open_cmd": "open" if sys.platform == "darwin" else "xdg-open",
+    # MENU > THIS AGENT > COMMANDS: typed at the agent as they are.
+    "commands": ["/compact", "/clear", "/context", "/review", "/status"],
+    # The context gauge: tokens that count as full, and the percentage at
+    # which the deck warns once (0 = never). A session seen above
+    # ctx_window is taken to be on a 1M-token window.
+    "ctx_window": 200000,
+    "ctx_warn_pct": 80,
+    # Also post a desktop notification when an agent needs you.
+    "notify": False,
     "sounds": True,            # chimes on BLOCKED / DONE / ERROR
+    # Quiet feedback sounds as controls act (firmware 0.5).
+    "ui_sounds": True,
+    # How a BLOCKED agent announces itself: "loud" (a longer, louder
+    # alert; on older firmware the chime three times) or "normal".
+    "alert": "loud",
     "focus_on_edit": True,     # EDIT also focuses the pane on the computer
 }
 
@@ -280,16 +308,18 @@ class SimulateLink:
     """No hardware: frames are printed, not sent."""
 
     FOOTER_STYLE = ["idle", "info", "good", "warn", "bad"]
-    BEEPS = {1: "attention", 2: "done", 3: "error", 4: "ack"}
+    BEEPS = {1: "attention", 2: "done", 3: "error", 4: "ack", 5: "warn",
+             6: "tick", 7: "up", 8: "down", 9: "alert"}
 
     def frame(self, ftype, payload):
         if ftype == FT_SLOT and len(payload) >= 3:
             slot, state, kind = payload[0], payload[1], payload[2]
             name = payload[3:].decode("ascii", "replace")
-            print("[frame] SLOT slot=%d state=%s kind=%s%s%s name=%s"
-                  % (slot, STATES[state], KINDS[kind & 0x1F],
+            print("[frame] SLOT slot=%d state=%s kind=%s%s%s%s name=%s"
+                  % (slot, STATES[state], KINDS[kind & 0x0F],
                      " auto" if kind & KIND_AUTO else "",
-                     " loop" if kind & KIND_LOOP else "", name))
+                     " loop" if kind & KIND_LOOP else "",
+                     " mark" if kind & KIND_MARK else "", name))
         elif ftype == FT_DETAIL and len(payload) >= 1:
             print("[frame] DETAIL line=%d: %s"
                   % (payload[0], payload[1:].decode("ascii", "replace")))
@@ -302,7 +332,9 @@ class SimulateLink:
             print("[frame] FOOTER %s: %s"
                   % (style, payload[1:].decode("ascii", "replace")))
         elif ftype == FT_BEEP and len(payload) >= 1:
-            print("[frame] BEEP %s" % self.BEEPS.get(payload[0], payload[0]))
+            print("[frame] BEEP %s%s" % (
+                self.BEEPS.get(payload[0], payload[0]),
+                " gain=%d" % payload[1] if len(payload) > 1 else ""))
         elif ftype == FT_SELECT and len(payload) >= 1:
             print("[frame] SELECT slot=%d" % payload[0])
         elif ftype == FT_TEXT and len(payload) >= 2:
@@ -319,6 +351,10 @@ class SimulateLink:
                 "%s=%s" % (BTN_NAMES[i], ["", "off", "on", "blink", "glow"][b])
                 for i, b in enumerate(payload[:14]) if 0 < b < 5) or
                 "(all the device's)"))
+        elif ftype == FT_GAUGE and len(payload) >= 2:
+            print("[frame] GAUGE slot=%d %s" % (
+                payload[0], "%d%%" % payload[1] if payload[1] <= 100
+                else "none"))
         elif ftype == FT_HELLO_ACK:
             print("[frame] HELLO_ACK proto=%d" % (payload[0] if payload else 0))
         else:
@@ -954,6 +990,126 @@ def git_summary(cwd):
     return text
 
 
+_diff_cache = {}               # cwd -> (time, lines)
+
+
+def diff_lines(cwd):
+    """The DIFF view: what has changed in the agent's repository."""
+    if not cwd or not os.path.isdir(cwd):
+        return ["(no directory)"]
+    hit = _diff_cache.get(cwd)
+    if hit and time.time() - hit[0] < 5.0:
+        return hit[1]
+
+    def git(*args):
+        p = subprocess.run(("git", "-C", cwd) + args, capture_output=True,
+                           text=True, timeout=4)
+        return p.stdout.splitlines() if p.returncode == 0 else None
+    out = []
+    try:
+        stat = git("diff", "--numstat", "HEAD")
+        if stat is None:
+            out = ["(not a git repository)"]
+        else:
+            new = [ln[3:] for ln in git("status", "--porcelain") or []
+                   if ln.startswith("??")]
+            rows, add, rem = [], 0, 0
+            for ln in stat:
+                bits = ln.split("\t")
+                if len(bits) < 3:
+                    continue
+                plus = int(bits[0]) if bits[0].isdigit() else 0
+                minus = int(bits[1]) if bits[1].isdigit() else 0
+                add, rem = add + plus, rem + minus
+                rows.append((plus + minus, "+%d -%d %s" % (
+                    plus, minus, os.path.basename(bits[2].rstrip("/")))))
+            if rows:
+                out.append("%d FILES +%d -%d" % (len(rows), add, rem))
+                out += [text for _, text in sorted(rows, reverse=True)]
+            out += ["new: " + f for f in new]
+            log = git("log", "-3", "--format=%h %cr: %s")
+            out += ["-- recent commits --"] + log if log else []
+            if not stat and not new:
+                out.insert(0, "(no changes since the last commit)")
+    except (OSError, subprocess.SubprocessError):
+        out = ["(git did not answer)"]
+    _diff_cache[cwd] = (time.time(), out)
+    return out
+
+
+OPTION_RE = re.compile(r"^\W*(\d)\.\s+(\S.*)$")
+
+
+def parse_options(lines):
+    """The numbered choices of the prompt on screen: [(digit, text)], or []
+    unless the last lines hold a run 1, 2, ... of at least two."""
+    found = []
+    for ln in lines[-20:]:
+        m = OPTION_RE.match(ln.strip())
+        if m:
+            found.append((int(m.group(1)), m.group(2).strip()))
+    start = max((i for i, (d, _) in enumerate(found) if d == 1), default=None)
+    if start is None:
+        return []
+    run = []
+    for d, text in found[start:]:
+        if d != len(run) + 1:
+            break
+        run.append((d, text))
+    return run if len(run) >= 2 else []
+
+
+def notify_desktop(title, text):
+    """A notification on the computer; quietly nothing where there is no
+    way to post one."""
+    try:
+        if sys.platform == "darwin":
+            esc = lambda t: t.replace("\\", "\\\\").replace('"', '\\"')  # noqa
+            cmd = ["osascript", "-e", 'display notification "%s" with title '
+                   '"%s"' % (esc(text), esc(title))]
+        elif shutil.which("notify-send"):
+            cmd = ["notify-send", title, text]
+        else:
+            return
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL)
+    except OSError:
+        pass
+
+
+def make_worktree(cwd):
+    """A new git worktree next to the repository `cwd` is in, on a new
+    branch: (path, branch). Raises BackendError."""
+    def git(*args):
+        return subprocess.run(("git",) + args, capture_output=True,
+                              text=True, timeout=20)
+    try:
+        top = git("-C", cwd, "rev-parse", "--show-toplevel")
+        if top.returncode != 0:
+            raise BackendError("not a git repository: %s" % cwd)
+        # From inside a worktree, still number next to the main checkout.
+        common = git("-C", cwd, "rev-parse", "--path-format=absolute",
+                     "--git-common-dir")
+        root = top.stdout.strip()
+        if common.returncode == 0 and \
+                os.path.basename(common.stdout.strip()) == ".git":
+            root = os.path.dirname(common.stdout.strip())
+        for n in range(1, 100):
+            path, branch = "%s-wt%d" % (root, n), "deck/wt%d" % n
+            if os.path.exists(path) or git(
+                    "-C", root, "show-ref", "--verify", "--quiet",
+                    "refs/heads/" + branch).returncode == 0:
+                continue
+            p = git("-C", root, "worktree", "add", "-b", branch, path)
+            if p.returncode != 0:
+                raise BackendError((p.stderr.strip().splitlines() or
+                                    ["git worktree failed"])[-1])
+            return path, branch
+        raise BackendError("no free worktree name")
+    except (OSError, subprocess.SubprocessError) as e:
+        raise BackendError("git: %s" % e)
+
+
 def fmt_tokens(n):
     return "%dk" % round(n / 1000.0) if n >= 1000 else str(n)
 
@@ -978,7 +1134,11 @@ ALWAYS_RE = re.compile(
 # Which states an action makes sense for when it is applied to every agent.
 FLEET_STATES = {"approve": ("BLOCKED",), "deny": ("BLOCKED",),
                 "interrupt": ("WORKING",), "send": ("IDLE", "DONE")}
-CHORD_BUTTONS = ("REC", "FX", "ENV", "SEQ", "SEL", "PLAY", "SAVE")
+CHORD_BUTTONS = ("REC", "FX", "ENV", "SEQ", "SEL", "PLAY", "SAVE", "LFO",
+                 "ARP")
+VIEWS = ("output", "info", "diff")
+GLYPH = {"IDLE": ".", "WORKING": ">", "BLOCKED": "!", "DONE": "*",
+         "ERROR": "x", "UNKNOWN": "?"}
 LONG_PRESS = 0.7               # seconds: SEQ held this long = repeat mode
 CHORD_ACTION = {"REC": "approve", "FX": "deny", "ENV": "interrupt"}
 HELP_LINES = [
@@ -992,7 +1152,10 @@ HELP_LINES = [
     "FX+key    deny that one", "ENV+key   stop that one",
     "SEQ+key   send preset N", "SEL+key   answer option N",
     "PLAY+key  start / spawn there", "SAVE+key  move agent there",
-    "SEQ held  repeat the prompt", "EDIT x2   output / info view",
+    "LFO+key   mark / unmark it", "GLO+btn   marked ones, if any",
+    "GLO+LFO   clear the marks", "ARP+key   auto-approve it",
+    "SEQ held  repeat the prompt", "EDIT x2   output/info/diff",
+    "HOME x2   longest waiting", "K1 (menu) a page at a time",
     "MASTER    chime volume"]
 SLOTS_FILE = "~/.config/agentdeck/slots.json"
 
@@ -1034,7 +1197,15 @@ class Daemon:
         self.dev_proto = PROTO_VERSION if simulate else 1   # until it says
         self.dev_page = PAGE_GRID  # the page the device shows (CC 121)
         self.chord = None          # {"name", "used", "fleet", "t"}: a held button
-        self.view = "output"       # DETAIL shows: "output" | "info"
+        self.view = "output"       # DETAIL shows: one of VIEWS
+        self.beep_due = []         # when to repeat the attention chime
+        self.marks = set()         # agent ids in the marked group
+        self.options = []          # the selected prompt's [(digit, text)]
+        self.ctx_pct = {}          # agent id -> context fullness, 0..100
+        self.ctx_warned = set()    # agent ids already warned about it
+        self.sent_gauge = {}       # slot -> percentage last framed
+        self.state_since = {}      # agent id -> when its state last changed
+        self.worktree = False      # MENU > NEW AGENT: in a new worktree
         self.repeat = {}           # agent id -> {"text", "label", "n", "due"}
         self.blocked_since = {}    # agent id -> when it became BLOCKED
         self.last_nag = 0.0
@@ -1067,7 +1238,26 @@ class Daemon:
             self.beep(beep)
 
     def beep(self, which):
-        if self.cfg.get("sounds", True):
+        """Ask for a sound. A v5 device has the quiet feedback sounds, the
+        loud alert, and a loudness per sound; an older one gets the nearest
+        thing it knows (the alert: its attention chime, three times)."""
+        if not self.cfg.get("sounds", True):
+            return
+        if which in UI_BEEPS and not self.cfg.get("ui_sounds", True):
+            return
+        if which == BEEP_ALERT and self.cfg.get("alert", "loud") != "loud":
+            which = BEEP_ATTENTION
+        if self.dev_proto >= 5:
+            gain = BEEP_GAIN.get(which)
+            self.link.frame(FT_BEEP, bytes([which, gain] if gain
+                                           else [which]))
+        elif which == BEEP_ALERT:
+            now = time.time()
+            self.link.frame(FT_BEEP, bytes([BEEP_ATTENTION]))
+            self.beep_due = [now + 0.7, now + 1.4]
+        elif which == BEEP_WARN:
+            self.link.frame(FT_BEEP, bytes([BEEP_ACK]))
+        elif which < BEEP_WARN:
             self.link.frame(FT_BEEP, bytes([which]))
 
     def _default_footer(self):
@@ -1085,9 +1275,12 @@ class Daemon:
             self.sent_footer = want
 
     def tick(self):
-        """Housekeeping between events: expire the toast."""
+        """Housekeeping between events: expire the toast, repeat a chime."""
         if self.toast_text and time.time() >= self.toast_until:
             self._send_footer()
+        if self.beep_due and time.time() >= self.beep_due[0]:
+            self.beep_due.pop(0)
+            self.link.frame(FT_BEEP, bytes([BEEP_ATTENTION]))
 
     def _send_detail(self, force=False):
         rows = DETAIL_ROWS.get(self.dev_proto, 6)
@@ -1127,10 +1320,14 @@ class Daemon:
                 r["n"], self._repeat_max(), r["label"]))
         if i.get("prompt"):
             out.append("ASKED: " + i["prompt"])
+        if a["id"] in self.ctx_pct:
+            out.append("CONTEXT %d%% FULL" % self.ctx_pct[a["id"]])
         if a["state"] == "BLOCKED" and i.get("pending"):
             out.append("WANTS: " + i["pending"])
         elif a["state"] == "WORKING" and i.get("doing"):
             out.append("DOING: " + i["doing"])
+        if a["state"] == "BLOCKED":
+            out += ["SEL+%d: %s" % o for o in self.options]
         if i.get("todo"):
             out.append("TODO " + i["todo"])
         if i.get("said"):
@@ -1153,9 +1350,12 @@ class Daemon:
         # SAVE can only do something when the prompt offers "always".
         self.always_ready = bool(a and a["state"] == "BLOCKED" and any(
             ALWAYS_RE.match(ln.strip()) for ln in raw[-30:]))
-        if a and self.view == "info":
+        self.options = parse_options(raw) if a and \
+            a["state"] == "BLOCKED" else []
+        if a and self.view != "output":
             before = len(self.detail_all)
-            self.detail_all = self.info_lines(a)
+            self.detail_all = self.info_lines(a) if self.view == "info" \
+                else wrap_lines(diff_lines(a.get("cwd")))
             if self.scroll == 0 and len(self.detail_all) != before:
                 force = True
             # INFO reads from the top; scroll counts lines down from there.
@@ -1174,11 +1374,12 @@ class Daemon:
         self._send_detail(force)
 
     def toggle_view(self):
-        self.view = "info" if self.view == "output" else "output"
+        self.view = VIEWS[(VIEWS.index(self.view) + 1) % len(VIEWS)]
         self.scroll = 0
         print("[view] %s" % self.view)
         self.refresh_detail()
-        self.toast("VIEW: %s" % self.view.upper(), F_INFO, 1.5)
+        self.toast("VIEW: %s" % self.view.upper(), F_INFO, 1.5,
+                   beep=BEEP_TICK)
 
     def _send_btnleds(self, force=False):
         """The button LEDs the host owns: SEQ while the selected agent is
@@ -1189,6 +1390,8 @@ class Daemon:
             leds[BTN_NAMES.index("SEQ")] = B_ON
         if self.always_ready:
             leds[BTN_NAMES.index("SAVE")] = B_BLINK
+        if a and a["id"] in self.marks:
+            leds[BTN_NAMES.index("LFO")] = B_ON
         leds = bytes(leds)
         if force or leds != self.sent_btnleds:
             self.link.frame(FT_BTNLEDS, leds)
@@ -1254,6 +1457,10 @@ class Daemon:
             slot = self.slots.pop(aid)
             self.auto.discard(aid)
             self.repeat.pop(aid, None)
+            self.marks.discard(aid)
+            self.ctx_pct.pop(aid, None)
+            self.ctx_warned.discard(aid)
+            self.state_since.pop(aid, None)
             self.blocked_since.pop(aid, None)
             self.prev_state.pop(aid, None)
             print("[gone] slot %d: %s" % (slot, aid))
@@ -1297,6 +1504,7 @@ class Daemon:
         self._repeat_step(agents)
         self._notify(agents)
         self._nag(agents)
+        self._context(agents)
 
         full = self.need_reset or time.time() - self.last_full > 10.0
         if self.need_reset:
@@ -1321,7 +1529,8 @@ class Daemon:
                 continue
             auto = a["id"] in self.auto
             loop = a["id"] in self.repeat
-            sig = (a["state"], a["kind"], a["name"], auto, loop)
+            mark = a["id"] in self.marks
+            sig = (a["state"], a["kind"], a["name"], auto, loop, mark)
             if old is None or old[0] != a["state"]:
                 print("[state] slot %d %s: %s -> %s"
                       % (slot, a["name"], old[0] if old else "NONE",
@@ -1332,10 +1541,21 @@ class Daemon:
                     kind |= KIND_AUTO
                 if loop and self.dev_proto >= 4:
                     kind |= KIND_LOOP
+                if mark and self.dev_proto >= 5:
+                    kind |= KIND_MARK
                 payload = bytes([slot, ST[a["state"]], kind]) + \
                     clean_text(a["name"], 44).encode("ascii", "replace")
                 self.link.frame(FT_SLOT, payload)
                 self.sent[slot] = sig
+        if self.dev_proto >= 5:                # how full each context is
+            for slot in sorted(self.used):
+                a = self.roster.get(slot)
+                pct = self.ctx_pct.get(a["id"], GAUGE_NONE) if a \
+                    else GAUGE_NONE
+                if self.sent_gauge.get(slot, GAUGE_NONE) != pct or \
+                        (full and pct != GAUGE_NONE):
+                    self.link.frame(FT_GAUGE, bytes([slot, pct]))
+                    self.sent_gauge[slot] = pct
         self.refresh_detail(force=full)
         if full:
             self.sent_footer = None
@@ -1366,13 +1586,15 @@ class Daemon:
         for a in agents:
             old = self.prev_state.get(a["id"])
             self.prev_state[a["id"]] = a["state"]
+            if old != a["state"]:
+                self.state_since[a["id"]] = time.time()
             if old is None or old == a["state"]:
                 continue                       # first sight is not news
             if a["state"] in ("BLOCKED", "ERROR", "DONE"):
                 self.log_event("%s %s" % (a["name"], a["state"]))
             if a["state"] == "BLOCKED" and a["id"] not in self.auto:
                 want = claude_insight(a).get("pending")
-                ev = (0, BEEP_ATTENTION,
+                ev = (0, BEEP_ALERT,
                       "%s: %s" % (a["name"][:10], want) if want
                       else "%s NEEDS YOU" % a["name"], F_WARN)
             elif a["state"] == "ERROR":
@@ -1385,6 +1607,33 @@ class Daemon:
                 best = ev
         if best:
             self.toast(best[2], best[3], 4.0, beep=best[1])
+            if self.cfg.get("notify"):
+                notify_desktop("Agent Deck", best[2])
+
+    def _context(self, agents):
+        """How full each Claude Code agent's context is; one warning as it
+        crosses ctx_warn_pct (and again only after it has dropped back)."""
+        try:
+            window = max(1000, int(self.cfg.get("ctx_window") or 200000))
+            warn = int(self.cfg.get("ctx_warn_pct") or 0)
+        except (TypeError, ValueError):
+            window, warn = 200000, 80
+        for a in agents:
+            ctx = claude_insight(a).get("ctx")
+            if not ctx:
+                self.ctx_pct.pop(a["id"], None)
+                continue
+            pct = min(100, ctx * 100 // (window if ctx <= window
+                                         else max(window, 1000000)))
+            self.ctx_pct[a["id"]] = pct
+            if warn and pct >= warn and a["id"] not in self.ctx_warned:
+                self.ctx_warned.add(a["id"])
+                print("[context] %s is %d%% full" % (a["name"], pct))
+                self.toast("%s CONTEXT %d%%" % (a["name"], pct), F_WARN, 4.0,
+                           beep=BEEP_WARN)
+                self.log_event("%s context %d%%" % (a["name"], pct))
+            elif pct < warn - 10:
+                self.ctx_warned.discard(a["id"])
 
     def _repeat_max(self):
         try:
@@ -1469,7 +1718,7 @@ class Daemon:
             self.last_nag = now
             name = next((a["name"] for a in agents if a["id"] == oldest), "?")
             self.toast("STILL WAITING %s %s" % (fmt_age(waited), name),
-                       F_WARN, 4.0, beep=BEEP_ATTENTION)
+                       F_WARN, 4.0, beep=BEEP_ALERT)
 
     def move_agent(self, dst):
         """SAVE + key: the selected agent takes that key (a swap if it is
@@ -1493,7 +1742,8 @@ class Daemon:
             a["name"], src, dst, " (swapped with %s)" % other["name"]
             if other else ""))
         self.link.frame(FT_SELECT, bytes([dst]))
-        self.toast("MOVED %s > %02d" % (a["name"], dst), F_GOOD)
+        self.toast("MOVED %s > %02d" % (a["name"], dst), F_GOOD,
+                   beep=BEEP_TICK)
         self.poll_soon = time.time()
 
     def copy_reply(self):
@@ -1567,7 +1817,9 @@ class Daemon:
                 kind.upper()
         if self._run(a, action, arg):
             done = label or PAST.get(action, action.upper())
-            self.toast("%s %s" % (done, a["name"]), F_GOOD, 2.0)
+            self.toast("%s %s" % (done, a["name"]), F_GOOD, 2.0,
+                       beep=BEEP_DOWN if action in ("deny", "interrupt")
+                       else BEEP_UP)
             self.log_event("%s %s" % (a["name"], done.lower().rstrip(" >")))
         self.poll_soon = time.time() + 0.4
 
@@ -1575,19 +1827,24 @@ class Daemon:
         """GLO held: the action, for every agent it applies to."""
         states = FLEET_STATES[action]
         targets = [self.roster[s] for s in sorted(self.roster)
-                   if self.roster[s]["state"] in states]
+                   if self.roster[s]["state"] in states and
+                   (not self.marks or self.roster[s]["id"] in self.marks)]
         if not targets:
-            self.toast("ALL: NONE %s" % "/".join(states), F_WARN)
+            self.toast("%s: NONE %s" % ("MARKED" if self.marks else "ALL",
+                                        "/".join(states)), F_WARN)
             return
         backend_action = "prompt" if action == "send" else action
         arg = self.presets[self.preset]["text"] if action == "send" else None
         ok = 0
         for a in targets:
-            print("[action] %s (all) -> %s" % (action, a["name"]))
+            print("[action] %s (%s) -> %s" % (
+                action, "marked" if self.marks else "all", a["name"]))
             ok += 1 if self._run(a, backend_action, arg) else 0
         if ok:
             self.toast("%s x%d" % (PAST.get(backend_action, action.upper()),
-                                   ok), F_GOOD)
+                                   ok), F_GOOD,
+                       beep=BEEP_DOWN if action in ("deny", "interrupt")
+                       else BEEP_UP)
         self.poll_soon = time.time() + 0.4
 
     def approve_always(self):
@@ -1616,7 +1873,7 @@ class Daemon:
               % (self.selected, a["name"], digit))
         try:
             self.backend.send_keys(a["id"], [digit])
-            self.toast("ALWAYS OK %s" % a["name"], F_GOOD, 2.0)
+            self.toast("ALWAYS OK %s" % a["name"], F_GOOD, 2.0, beep=BEEP_UP)
         except Exception as e:
             self._fail("always", e)
         self.poll_soon = time.time() + 0.4
@@ -1647,19 +1904,74 @@ class Daemon:
                        else self.preset + delta) % n
         text = self._default_footer()[1]
         print("[preset] %s" % text)
-        self.toast(text, F_INFO, 1.5)
+        self.toast(text, F_INFO, 1.5, beep=BEEP_TICK)
 
-    def toggle_auto(self):
-        a = self.roster.get(self.selected)
+    def toggle_mark(self, slot=None):
+        slot = self.selected if slot is None else slot
+        a = self.roster.get(slot)
         if not a:
-            self.toast("SLOT %02d IS EMPTY" % self.selected, F_WARN)
+            self.toast("SLOT %02d IS EMPTY" % slot, F_WARN)
+            return
+        on = a["id"] not in self.marks
+        (self.marks.add if on else self.marks.discard)(a["id"])
+        print("[mark] %s slot %d (%s): %d marked" % (
+            "+" if on else "-", slot, a["name"], len(self.marks)))
+        self.toast("%s %s (%d MARKED)" % ("MARKED" if on else "UNMARKED",
+                                          a["name"], len(self.marks)), F_INFO,
+                   beep=BEEP_TICK)
+        self.poll_soon = time.time()
+
+    def clear_marks(self):
+        n = len(self.marks)
+        self.marks.clear()
+        print("[mark] cleared (%d)" % n)
+        self.toast("MARKS CLEARED x%d" % n, F_INFO)
+        self.poll_soon = time.time()
+
+    def mark_all(self):
+        self.marks = {a["id"] for a in self.roster.values()}
+        print("[mark] all (%d)" % len(self.marks))
+        self.toast("MARKED ALL x%d" % len(self.marks), F_INFO)
+        self.poll_soon = time.time()
+
+    def jump_urgent(self):
+        """HOME on the GRID: go to whoever has waited longest - the oldest
+        BLOCKED, else an ERROR, else a DONE."""
+        rank = {"BLOCKED": 0, "ERROR": 1, "DONE": 2}
+        want = sorted(
+            (rank[a["state"]], self.state_since.get(a["id"], 0.0), s)
+            for s, a in self.roster.items() if a["state"] in rank)
+        if not want:
+            self.toast("NOTHING NEEDS YOU", F_GOOD, 1.5)
+            return
+        slot = want[0][2]
+        self.link.frame(FT_SELECT, bytes([slot]))
+        self.select_slot(slot)
+        a = self.roster[slot]
+        self.toast("%s %s %s" % (a["name"], a["state"], fmt_age(
+            time.time() - self.state_since.get(a["id"], time.time()))),
+            F_WARN if a["state"] == "BLOCKED" else F_INFO, 2.5)
+
+    def goto_agent(self, slot):
+        """Select a slot and show its DETAIL page, on the device too."""
+        self.link.frame(FT_SELECT, bytes([slot]))
+        self.select_slot(slot)
+        self.menu = []
+        self.dev_page = PAGE_DETAIL
+        self.link.frame(FT_PAGE, bytes([PAGE_DETAIL]))
+
+    def toggle_auto(self, slot=None):
+        slot = self.selected if slot is None else slot
+        a = self.roster.get(slot)
+        if not a:
+            self.toast("SLOT %02d IS EMPTY" % slot, F_WARN)
             return
         on = a["id"] not in self.auto
         (self.auto.add if on else self.auto.discard)(a["id"])
         print("[auto] %s for slot %d (%s)" % ("ON" if on else "off",
-                                              self.selected, a["name"]))
+                                              slot, a["name"]))
         self.toast("AUTO-APPROVE %s %s" % ("ON" if on else "OFF", a["name"]),
-                   F_WARN if on else F_INFO)
+                   F_WARN if on else F_INFO, beep=BEEP_TICK)
         self.poll_soon = time.time()           # the A marker / ARP LED
 
     def auto_off_all(self):
@@ -1693,6 +2005,15 @@ class Daemon:
         cwd = cwd or self.cfg.get("spawn_cwd") or (near or {}).get("cwd") \
             or os.path.expanduser("~")
         cwd = os.path.expanduser(cwd)
+        if self.worktree:
+            try:
+                cwd, branch = make_worktree(cwd)
+            except BackendError as e:
+                print("[spawn] worktree: %s" % e)
+                self.toast("NO WORKTREE: %s" % e, F_BAD, 4.0)
+                return
+            print("[spawn] new worktree %s on %s" % (cwd, branch))
+            self.log_event("worktree %s" % os.path.basename(cwd))
         label = os.path.basename(cwd.rstrip("/")) or kind
         print("[spawn] %s in %s (slot %d)" % (
             command, cwd, self.selected if slot is None else slot))
@@ -1724,7 +2045,7 @@ class Daemon:
         if self.dev_proto < 2:
             return                             # a v1 device scrolls itself
         before = self.scroll
-        if self.view == "info":                # top-anchored: + is down
+        if self.view != "output":              # top-anchored: + is down
             self.scroll = max(0, self.scroll + delta)
             self.refresh_detail()
             return
@@ -1814,9 +2135,10 @@ class Daemon:
         self.dev_page = PAGE_GRID
         self.link.frame(FT_PAGE, bytes([PAGE_GRID]))
 
-    def menu_move(self, delta):
+    def menu_move(self, delta, step=1):
         if self.menu:
-            self.menu[-1][1] += 1 if delta > 0 else -1
+            self.menu[-1][1] += step if delta > 0 else -step
+        self.beep(BEEP_TICK)
         self._menu_render()
 
     def menu_pick(self):
@@ -1825,6 +2147,7 @@ class Daemon:
         builder, cur = self.menu[-1]
         _, items = builder()
         if 0 <= cur < len(items) and items[cur][1]:
+            self.beep(BEEP_TICK)
             items[cur][1]()
         if self.dev_page == PAGE_MENU:
             self._menu_render()
@@ -1836,6 +2159,7 @@ class Daemon:
     def _m_root(self):
         return "MENU - %s" % self._target(), [
             ("THIS AGENT", self._menu_push(self._m_agent)),
+            ("FLEET", self._menu_push(self._m_fleet)),
             ("NEW AGENT", self._menu_push(self._m_new)),
             ("SEND PROMPT", self._menu_push(self._m_prompts)),
             ("EVENT LOG", self._menu_push(self._m_log)),
@@ -1853,9 +2177,41 @@ class Daemon:
                                     else "OFF"), self.toggle_repeat),
             ("AUTO-APPROVE: %s" % ("ON" if a["id"] in self.auto
                                    else "OFF"), self.toggle_auto),
+            ("MARKED: %s" % ("YES" if a["id"] in self.marks else "NO"),
+             self.toggle_mark),
+            ("COMMANDS", self._menu_push(self._m_commands)),
             ("FOCUS ON COMPUTER", self.focus),
             ("COPY LAST REPLY", self.copy_reply),
             ("OPEN FOLDER", self.open_folder)]
+
+    def _m_commands(self):
+        items = []
+        for c in self.cfg.get("commands") or []:
+            c = str(c).strip()
+            if c:
+                def go(c=c):
+                    self.do_action("prompt", c, label="SENT %s >" % c[:12])
+                items.append((c, go))
+        return "COMMAND > %s" % self._target(), \
+            items or [("(none configured)", None)]
+
+    def _m_fleet(self):
+        now = time.time()
+        counts = collections.Counter(a["state"] for a in self.roster.values())
+        items = [("CLEAR MARKS (%d)" % len(self.marks), self.clear_marks)
+                 if self.marks else ("MARK ALL", self.mark_all)]
+        for slot, a in sorted(self.roster.items()):
+            ctx = claude_insight(a).get("ctx")
+            items.append(("%02d %s%s%-10s %3s %s" % (
+                slot, GLYPH.get(a["state"], "-"),
+                "+" if a["id"] in self.marks else " ", a["name"][:10],
+                fmt_age(now - self.state_since.get(a["id"], now)),
+                fmt_tokens(ctx) if ctx else ""),
+                lambda slot=slot: self.goto_agent(slot)))
+        title = "FLEET %d" % len(self.roster) + "".join(
+            " %d%s" % (counts[st], GLYPH[st]) for st in
+            ("BLOCKED", "WORKING", "DONE", "ERROR", "IDLE") if counts[st])
+        return title, items
 
     def _m_new(self):
         dirs = []
@@ -1873,7 +2229,11 @@ class Daemon:
         default = self.cfg.get("default_agent")
         kinds = [k for k in sorted(agents, key=lambda k: k != default)
                  if shutil.which(str(agents[k]).split()[0])]
-        items = []
+
+        def flip_worktree():
+            self.worktree = not self.worktree
+        items = [("IN A NEW WORKTREE: %s" % ("YES" if self.worktree
+                                             else "NO"), flip_worktree)]
         for d in dirs:
             for k in kinds:
                 def go(k=k, d=d):
@@ -1881,10 +2241,17 @@ class Daemon:
                     self._menu_leave()
                 items.append(("%s %s" % (
                     k, os.path.basename(d.rstrip("/")) or d), go))
-        return "NEW AGENT IN...", items or [("(no agent CLI found)", None)]
+        if len(items) == 1:
+            items = [("(no agent CLI found)", None)]
+        return "NEW AGENT IN...", items
 
     def _m_prompts(self):
         items = []
+        a = self.roster.get(self.selected)
+        last = claude_insight(a).get("prompt") if a else None
+        if last:                               # what it was asked last time
+            items.append(("AGAIN: %s" % last, lambda: self.do_action(
+                "prompt", last, label="SENT AGAIN >")))
         for i, p in enumerate(self.presets):
             def go(i=i):
                 self.preset = i
@@ -1916,8 +2283,19 @@ class Daemon:
                 self.cfg[key] = not self.cfg.get(key, True)
             return go
 
+        def flip_off(key):                     # for keys that default off
+            def go():
+                self.cfg[key] = not self.cfg.get(key)
+            return go
+
+        def alert():
+            self.cfg["alert"] = "normal" if self.cfg.get(
+                "alert", "loud") == "loud" else "loud"
+            self.beep(BEEP_ALERT)              # hear what was chosen
+
         def resync():
             self.need_reset = True
+            self.sent_gauge.clear()
             self.sent.clear()
             self.sent_detail.clear()
             self.sent_meta = None
@@ -1932,8 +2310,13 @@ class Daemon:
         nag_now = self.cfg.get("nag_minutes") or 0
         return "SETTINGS", [
             ("SOUNDS: %s" % on("sounds"), flip("sounds")),
+            ("FEEDBACK SOUNDS: %s" % on("ui_sounds"), flip("ui_sounds")),
+            ("BLOCKED ALERT: %s" % str(self.cfg.get("alert", "loud")).upper(),
+             alert),
             ("NAG WHILE BLOCKED: %s" % ("%sM" % nag_now if nag_now
                                         else "OFF"), nag),
+            ("DESKTOP NOTIFY: %s" % ("ON" if self.cfg.get("notify")
+                                     else "OFF"), flip_off("notify")),
             ("FOCUS ON EDIT: %s" % on("focus_on_edit"),
              flip("focus_on_edit")),
             ("AUTO-APPROVE OFF, ALL (%d)" % len(self.auto),
@@ -1965,6 +2348,18 @@ class Daemon:
                 leds[k] = L_ON if k == self.preset else L_GLOW
         elif name == "SEL":
             leds[:9] = [L_GLOW] * 9
+            if self.options:                   # exactly the choices on offer
+                leds[:9] = [L_OFF] * 9
+                for d, text in self.options:
+                    if 1 <= d <= 9:
+                        leds[d - 1] = L_BLINK if ALWAYS_RE.match(
+                            "%d. %s" % (d, text)) else L_ON
+        elif name in ("LFO", "ARP"):           # who is marked / on auto
+            group = self.marks if name == "LFO" else self.auto
+            for k in range(27):
+                a = self.roster.get(base + k)
+                if a:
+                    leds[k] = L_ON if a["id"] in group else L_GLOW
         elif name in ("PLAY", "SAVE"):         # where things are / could go
             for k in range(27):
                 leds[k] = L_ON if base + k in self.roster else L_GLOW
@@ -1984,7 +2379,15 @@ class Daemon:
                 self.toast("NO PRESET %d" % (k + 1), F_WARN)
         elif name == "SEL":
             if k < 9:
-                self.send_keys([str(k + 1)], "OPTION %d >" % (k + 1))
+                text = dict(self.options).get(k + 1)
+                self.send_keys([str(k + 1)], "%d %s >" % (k + 1, text[:14])
+                               if text else "OPTION %d >" % (k + 1))
+        elif name == "LFO":
+            self.toggle_mark(slot)
+            self._chord_leds(name)             # the lights follow
+        elif name == "ARP":
+            self.toggle_auto(slot)
+            self._chord_leds(name)
         elif name == "PLAY":
             if slot in self.roster:
                 self.do_action("start", slot=slot)
@@ -2007,7 +2410,7 @@ class Daemon:
         if not down:
             self.held.discard(name)
             if name == "GLO" and self.toast_text and \
-                    self.toast_text[1].startswith("ALL:"):
+                    self.toast_text[1].startswith(("ALL:", "MARKED x")):
                 self.toast_until = 0.0         # drop the modifier hint
                 self._send_footer()
             c = self.chord
@@ -2042,7 +2445,14 @@ class Daemon:
 
     def _press(self, name, fleet):
         if name == "GLO":
-            self.toast("ALL: REC FX ENV SEQ ARP", F_INFO, 30.0)
+            self.toast("MARKED x%d: REC FX ENV SEQ LFO" % len(self.marks)
+                       if self.marks else "ALL: REC FX ENV SEQ ARP",
+                       F_INFO, 30.0)
+        elif name == "HOME":
+            # Already on the GRID (the page report comes after the button):
+            # HOME again goes to whoever has waited longest.
+            if self.dev_page == PAGE_GRID and self.dev_proto >= 3:
+                self.jump_urgent()
         elif name in ("OCT-", "OCT+"):
             self.page = max(0, min(1, self.page + (1 if name == "OCT+"
                                                     else -1)))
@@ -2065,14 +2475,18 @@ class Daemon:
         elif name == "SEL":
             self.send_keys(["enter"], "ENTER >")
         elif name == "LFO":
-            self.send_keys(["shift+tab"], "MODE >")
+            if fleet:
+                self.clear_marks()
+            else:
+                self.send_keys(["shift+tab"], "MODE >")
         elif name == "EDIT":
             if self.cfg.get("focus_on_edit", True):
                 self.focus()
-        # HOME: a page jump on the device, nothing for the host to do
 
     def on_encoder(self, name, delta):
-        if name == "K1":
+        if name == "K1" and self.dev_page == PAGE_MENU:
+            self.menu_move(delta, MENU_ROWS)   # a page of the menu at a time
+        elif name == "K1":
             self.scroll_by(delta)
         elif name == "K2":
             self.send_keys(["down" if delta > 0 else "up"] *
@@ -2103,6 +2517,7 @@ class Daemon:
                 self.chord = None
                 self.sent_text.clear()
                 self.sent_btnleds = None
+                self.sent_gauge.clear()
                 self.sent.clear()
                 self.sent_detail.clear()
                 self.sent_meta = None
@@ -2169,6 +2584,12 @@ class Daemon:
             self.move_agent(num())
         elif cmd == "copy":
             self.copy_reply()
+        elif cmd == "mark":
+            self.toggle_mark(num())
+        elif cmd == "unmark":
+            self.clear_marks()
+        elif cmd == "urgent":
+            self.jump_urgent()
         elif cmd in ("next", "prev"):
             self.jump_attention(1 if cmd == "next" else -1)
         elif cmd == "scroll":
@@ -2227,7 +2648,8 @@ SIM_HELP = ("select N | start | approve | always | deny | interrupt | enter"
             " | mode | auto | focus | next | prev | scroll N | preset N |"
             " send | prompt TEXT | spawn [KIND] | all approve|deny|interrupt"
             "|send | keys K.. | btn NAME [up|down] | enc NAME N |"
-            " key N | page N | view | repeat | move N | copy | quit")
+            " key N | page N | view | repeat | move N | copy | mark [N] |"
+            " unmark | urgent | quit")
 
 
 def main(argv=None):
