@@ -655,8 +655,8 @@ static void draw_boxes(void)
             state_icon(x + (w - 12) / 2, y + 21, st, 1);
         } else {
             cv_text(x + 6, y + 3, &FONT_S, s, sel ? C_WHITE : C_GREY);
-            state_icon(x + w - 18, y + 5, st, 1);
-            fit_text(s, slot_name[slot], w - 10);
+            state_icon(x + w - 21, y + 5, st, 1);
+            fit_text(s, slot_name[slot], w - 14);
             cv_text(x + (w - text_w(&FONT_S, s)) / 2, y + (h >= 70 ? 28 : 19), &FONT_S, s,
                     st == S_IDLE ? C_TXT : col);
             if (h >= 50) {                      /* room for a bottom line: kind, flags, age */
@@ -665,12 +665,13 @@ static void draw_boxes(void)
                         kind_colour(slot_kind[slot]));
                 if (w >= 110) draw_flags(x + 30, by, slot);
                 put_age(s, slot);
-                rtext(x + w - 6, by, s[0] == ' ' ? s + 1 : s, C_GREY);
+                rtext(x + w - 9, by, s[0] == ' ' ? s + 1 : s, C_GREY);
             }
         }
-        if (slot_gauge[slot] <= 100u) {         /* context: along the bottom edge */
-            cv_rect(x + 4, y + h - 5, w - 8, 2, C_RULE);
-            cv_rect(x + 4, y + h - 5, (int32_t)slot_gauge[slot] * (w - 8) / 100, 2, gauge_colour(slot_gauge[slot]));
+        if (slot_gauge[slot] <= 100u) {         /* context: up the right edge, as on a row */
+            int32_t gh = h - 8, f = ((int32_t)slot_gauge[slot] * gh + 99) / 100;
+            cv_rect(x + w - 6, y + 4, 3, gh, C_RULE);
+            if (f > 0) cv_rect(x + w - 6, y + 4 + gh - f, 3, f, gauge_colour(slot_gauge[slot]));
         }
     }
 }
