@@ -96,7 +96,7 @@ import time
 import types
 
 PROTO_VERSION = 6
-VERSION = "0.6"                # the daemon's own, shown on ABOUT
+VERSION = "0.6.2"               # the daemon's own, shown on ABOUT
 
 # --- protocol constants (PROTOCOL.md) ---------------------------------------
 CH = 0x0F                      # MIDI channel 16 (low nibble)
@@ -310,9 +310,9 @@ class MidiLink:
         self._mido = mido
         self.event_q = event_q
         want = [port_substr] if port_substr else []
-        # "Felucca" last: Agent Deck inherits the platform's USB product
-        # name, so that is how a flashed unit shows up on some hosts.
-        want += ["FM-1", "FM1", "DINGHY", "AGTDECK", "M-VAVE", "Cuvave",
+        # "AGTDECK" is the USB name from firmware 0.6.2 on; "Felucca" (the
+        # platform's own name) is how a unit on 0.6.1 or older shows up.
+        want += ["AGTDECK", "FM-1", "FM1", "DINGHY", "M-VAVE", "Cuvave",
                  "Felucca"]
         ins, outs = mido.get_input_names(), mido.get_output_names()
         pick_in = next((n for w in want for n in ins

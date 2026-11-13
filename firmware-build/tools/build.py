@@ -55,7 +55,7 @@ SDK_SHA256 = {
 }
 
 BOARD = "fm1"                       # fm1 (default) or smk37: BOARD env or --board
-BOARD_PREFIX = {"fm1": "FM-1_96", "smk37": "SMK-37 Pro_99"}   # identity: prefix + minor (0: a dev build)
+BOARD_PREFIX = {"fm1": "FM-1_2435", "smk37": "SMK-37 Pro_99"}   # identity: prefix + minor (0: a dev build)
 BOARD_DEFS = {"fm1": [], "smk37": ["-DBOARD_SMK37=1"]}
 MODELS = {"pro": "SMK-37 Pro", "elite": "SMK-37 Elite", "mke": "MKE-P37"}   # smk37: one keyboard, three names
 DATA_FAMILY = "DINGHY"              # the SMK store's owner tag (store.h): 1..7 of A-Z 0-9. Your fork: your own
@@ -298,7 +298,7 @@ def mmio_check():
 def main():
     global PRODUCT, VERSION, BOARD, APP_SLOT
     ap = argparse.ArgumentParser()
-    ap.add_argument("--release", metavar="X.Y", help="release build: identity FM-1_99Y, version string X.Y")
+    ap.add_argument("--release", metavar="X.Y", help="release build: identity prefix + Y, version string X.Y")
     ap.add_argument("--board", choices=sorted(BOARD_PREFIX), default=None,
                     help="target board: fm1 (default) or smk37 (default: $BOARD, else fm1)")
     ap.add_argument("--model", choices=sorted(MODELS), default=None,

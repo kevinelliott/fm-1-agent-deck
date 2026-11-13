@@ -37,7 +37,7 @@ MAXDATA = 512
 BLOCKS, BLK, KEEP = 20, 0x30, 0x2F         # BLOCKS: the identity blocks (more may follow, see block_count)
 MAX_BLOCKS = 64
 LOADER_MARK = b"FELUCCA-LOADER-1"
-PORT_RE = re.compile(r"fm-1|smk|elite|mke-p37|starry|felucca|sloop|clipper|melodee|fomni|x0x|makkuro|maku|rainbow|snoop|vector|vox|ota|composite|sinco|usb-midi", re.I)   # never probe other gear
+PORT_RE = re.compile(r"agtdeck|fm-1|smk|elite|mke-p37|starry|felucca|sloop|clipper|melodee|fomni|x0x|makkuro|maku|rainbow|snoop|vector|vox|ota|composite|sinco|usb-midi", re.I)   # never probe other gear
 # (the FM-1 and the SMK-37 family under Dinghy / OberVave / Felucca (its USB name), under the other ports, the update loaders,
 # the stock firmware: as the fm1-to-smk37 reference installer, genkigenki/sloop-fm1 smk37)
 OWN_LOADER_RE = re.compile(r"ota-(FM-1|SMK-37 Pro|SMK-37 Elite|MKE-P37)_9\d\d", re.I)   # a Felucca-family update loader
