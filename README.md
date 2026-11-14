@@ -9,21 +9,21 @@ running on your computer.
 *What the animation is: a picture of the FM-1 (White and Blue colorway) with
 Agent Deck's screen playing in its display — a visualization, not a
 video of the author's unit. The screen content is not a mockup: every
-frame is the LCD of firmware 0.6.3, captured from the shipped package
+frame is the LCD of firmware 0.7, captured from the shipped package
 running in [fm1-emu](#see-it-running--fm1-emu) and set into the display
 pixel for pixel. The firmware runs on a real FM-1 today; footage of it
 has yet to replace this. Each screen is shown full size in
 [the tour](#a-tour-of-the-screens) below.*
 
-▶ **[Play Agent Deck live in your browser](https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt)**
+▶ **[Play Agent Deck live in your browser](https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agtdeck&script=demo.txt)**
 — a firmware package running in **fm1-emu** on this project's own player
 page. One click on **Start** and it plays a scripted session by itself:
 daemon frames in, the GRID as a list and as boxes, every page walked.
-It is the current firmware package, 0.6.3. A one-page
+It is the current firmware package, 0.7. A one-page
 **[cheat sheet](https://kevinelliott.github.io/fm-1-agent-deck/cheatsheet.html)**
 has the controls.
 (Device-only view for embedding elsewhere:
-[embed link](https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt&embed=1).)
+[embed link](https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agtdeck&script=demo.txt&embed=1).)
 
 ## Why an FM synth?
 
@@ -76,9 +76,10 @@ and let the deck chime when someone needs you.
 > (protocol v6) is installed on the author's FM-1 — flashed over USB with
 > the installer in this repo, as every release from 0.1 on was before it
 > — and driven there by the daemon against a live Herdr session. The
-> newest package, **0.6.3** (`dist/agentdeck-0.6.3.fwsc`), is the same
-> firmware apart from its version text, and the first one **built and
-> signed on GitHub** from this source (see
+> newest package, **0.7** (`dist/agtdeck-0.7.fwsc`), is the same
+> firmware apart from its version text and the daemon's new file name
+> on the NO HOST screen, **built and signed on GitHub** from this
+> source (see
 > [Signed releases](#signed-releases)); it has run in the emulator, not
 > yet on the unit. Every package is booted in
 > [fm1-emu](https://github.com/joakimeriksson/fm1-emu), the chip-level
@@ -107,7 +108,7 @@ and let the deck chime when someone needs you.
 
 Colour means state everywhere: **amber** is waiting on you, **green** is
 finished, **red** is broken, **white** is working, **grey** is at rest.
-Every image here is the LCD of `dist/agentdeck-0.6.3.fwsc` running in
+Every image here is the LCD of `dist/agtdeck-0.7.fwsc` running in
 fm1-emu, fed the frames the daemon sends; the fleet of eight agents is
 made up for the pictures, the pixels are not.
 [`tools/emu_shots.py`](tools/emu_shots.py) regenerates all of them.
@@ -118,7 +119,7 @@ to do next.
 
 | Power-on | No daemon yet | Host connected, no agents |
 |---|---|---|
-| ![Splash: the nine-pad logo, AGENT DECK, firmware 0.6.3](docs/shot-splash.png) | ![Waiting for the host: NO HOST in the header, and the command to run on the computer](docs/shot-no-host.png) | ![No agents yet: pick a key, press PLAY, or start one in a terminal](docs/shot-empty.png) |
+| ![Splash: the nine-pad logo, AGENT DECK, firmware 0.7](docs/shot-splash.png) | ![Waiting for the host: NO HOST in the header, and the command to run on the computer](docs/shot-no-host.png) | ![No agents yet: pick a key, press PLAY, or start one in a terminal](docs/shot-empty.png) |
 
 **GRID** — the fleet. The header carries a logo whose nine pads are the
 first nine slots in their state colours, the page name, a five-segment
@@ -182,7 +183,7 @@ chip itself (both CPU cores, screen, keys, encoders, MIDI), so firmware
 packages run in it *unchanged* — the same `.fwsc` you would flash.
 
 The screens in [the tour](#a-tour-of-the-screens) come from there: the
-LCD of `dist/agentdeck-0.6.3.fwsc` booted in fm1-emu and fed the frame
+LCD of `dist/agtdeck-0.7.fwsc` booted in fm1-emu and fed the frame
 stream the daemon sends (injected through the FM-1's MIDI IN jack, which
 the firmware's platform merges into the same queue as USB MIDI). Two
 scripts drive it:
@@ -200,20 +201,20 @@ scripts drive it:
 **Run it yourself, in the browser:** this project hosts its own
 fm1-emu player (a vendored copy of the emulator whose only firmware
 is Agent Deck — see [`docs/play/`](docs/play/README.md)):
-**[kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt](https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt)**.
+**[kevinelliott.github.io/fm-1-agent-deck/play/?fw=agtdeck&script=demo.txt](https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agtdeck&script=demo.txt)**.
 One click on **Start** (browsers hold back sound until a click; the
 emulator's audio thread is what starts it) and it plays a scripted
 session by itself; afterwards the panel is yours — click the keys, turn
 the ALGORITHM knob, open the picker. A plain visit (no `script=`)
 boots the deck to `NO HOST`: it is a controller, and it wants its
-daemon. The player carries the current package (0.6.3); the session is
+daemon. The player carries the current package (0.7); the session is
 written by `python3 tools/emu_shots.py --player`.
 
 **Embed it on a site:** the player supports fm1-emu's embed mode —
 this iframe windows just the device, auto-playing the demo:
 
 ```html
-<iframe src="https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agentdeck&script=demo.txt&embed=1"
+<iframe src="https://kevinelliott.github.io/fm-1-agent-deck/play/?fw=agtdeck&script=demo.txt&embed=1"
         width="480" height="640" style="border:0"
         title="Agent Deck running in fm1-emu"></iframe>
 ```
@@ -221,7 +222,7 @@ this iframe windows just the device, auto-playing the demo:
 (Adjust the size to taste. GitHub renders no iframes in READMEs, which
 is why this page carries captures and a link instead.) You can also run the deck on the upstream
 [fm1-emu page](https://joakimeriksson.github.io/fm1-emu/): download
-[`dist/agentdeck-0.6.3.fwsc`](dist/agentdeck-0.6.3.fwsc), choose
+[`dist/agtdeck-0.7.fwsc`](dist/agtdeck-0.7.fwsc), choose
 **Open .fwsc…** there, and press **Start**.
 
 **Run it natively:** `tools/get_emu.sh` fetches the fm1-emu release
@@ -254,7 +255,7 @@ git clone https://github.com/kevinelliott/fm-1-agent-deck.git
 cd fm-1-agent-deck
 
 # 1. See the daemon work against your own tmux or Herdr sessions:
-python3 host/agentdeck.py --backend auto --simulate
+python3 host/agtdeck.py --backend auto --simulate
 #    (it prints its command list: select N | approve | deny | send | spawn | ...)
 
 # 2. Or run the self-test (spins up three throwaway tmux sessions — a fake
@@ -274,7 +275,7 @@ With a real FM-1 flashed with Agent Deck and plugged in over USB:
 
 ```sh
 pip install mido python-rtmidi
-python3 host/agentdeck.py --backend auto
+python3 host/agtdeck.py --backend auto
 ```
 
 ---
@@ -283,13 +284,13 @@ python3 host/agentdeck.py --backend auto
 
 ```
  ┌──────────────────────── FM-1 ────────────────────────┐
- │ Agent Deck firmware (Dinghy fork, firmware/agentdeck.c)│
+ │ Agent Deck firmware (Dinghy fork, firmware/agtdeck.c)│
  │  keys/buttons/knobs ──► panel events                   │
  │  LEDs + screen     ◄── agent states (CC frame stream)  │
  └──────────────┬───────────────────────────────────────┘
                 │  USB-MIDI channel 16  (PROTOCOL.md)
  ┌──────────────▼───────────────────────────────────────┐
- │ host/agentdeck.py  (the daemon, on your computer)      │
+ │ host/agtdeck.py  (the daemon, on your computer)      │
  │  panel events ──► approve / deny / interrupt / prompt  │
  │  backend states ──► SLOT / DETAIL / META frames        │
  └──────┬───────────────────────────────┬───────────────┘
@@ -404,7 +405,7 @@ daemon: SELECT moves, SEL picks, FX backs out.
 | Entry | What it does |
 |---|---|
 | THIS AGENT | view, repeat mode, auto-approve, mark, mute (no sounds or alerts from this one), its prompt queue (clear it), **COMMANDS** (`/compact`, `/clear`, `/context`… from `commands`), focus on the computer, copy its last reply to the clipboard, open its folder |
-| FLEET | every agent on one screen — state, time in state, context size — with the counts in the title; pick a row to open that agent's DETAIL. Also MARK ALL / CLEAR MARKS |
+| FLEET | every agent on one screen — state, time in state, context size — with the counts in the title and a TOKENS row (context in use and tokens written, summed over the Claude Code agents; `out` counts the part of each log the daemon reads, so it is a floor for a long session, and there are no prices); pick a row to open that agent's DETAIL. Also MARK ALL / CLEAR MARKS |
 | NEW AGENT | pick an installed agent CLI and a directory (the current agents' directories plus `projects` from the config) and start it. `IN A NEW WORKTREE: YES` first makes a git worktree next to the repository (`<repo>-wt1` on branch `deck/wt1`, and so on) and starts the agent there |
 | SEND PROMPT | `IF WORKING:` send now or queue it; `AGAIN:` what the agent was last asked (Claude Code), then the preset list; pick one to send to the selected agent |
 | EVENT LOG | who got blocked, finished, was approved or closed, and how long ago |
@@ -451,7 +452,15 @@ and with `"queue_when_working": true` so does a prompt sent mid-turn. A
 preset can also be a **pipeline** — `{"label": "test > review > commit",
 "steps": [...]}` — whose steps go out one per finished turn; the queue
 pauses while the agent is BLOCKED or in ERROR. INFO lists what is queued,
-and MENU → THIS AGENT clears it.
+and MENU → THIS AGENT clears it. A queued prompt goes only to an agent
+that has settled: at rest for three seconds and, for Claude Code, with
+its turn closed in its own session log. (A multiplexer can report a busy
+agent as idle for a moment between tool calls; a prompt typed then would
+land in the next permission dialog.)
+
+**Recent prompts.** MENU → SEND PROMPT → RECENT PROMPTS lists what was
+last typed at a Claude Code agent, at the terminal or from the deck, to
+send again: the nearest the deck gets to free text.
 
 **Auto-approve has limits.** Before ARP's auto-approve answers a prompt,
 the daemon checks what the agent wants to run, and the prompt on screen,
@@ -462,6 +471,16 @@ match it does not answer: the deck sounds the alert and says
 sandbox — a risky command phrased another way gets through — so keep
 auto-approve for agents whose worst case you can live with.
 
+For a stricter rule, give `auto_only` a list of patterns: auto-approve
+then answers only prompts that match one of them (`npm test`,
+`git (status|diff|log)`, …) and holds everything else with
+`AUTO HELD api: NOT ON LIST`. `auto_never` still wins over it. Two
+things are always held: a prompt whose screen cannot be read, and a
+Claude Code agent whose log shows it waiting while its screen shows no
+prompt (a scrolled view) — the deck marks that agent BLOCKED and leaves
+the answer to you. And the deck only sees prompts the agent asks: a
+command your agent's own permission settings allow never reaches it.
+
 **The INFO view** of DETAIL (firmware 0.3+) answers "what is this one
 doing?" without reading its scrollback. For Claude Code agents the daemon
 reads the session's own log under `~/.claude/projects/` (read-only, tail
@@ -469,7 +488,7 @@ only, best effort — it is an internal format):
 
 ```
 Fix flaky login test          <- the session's title
-fable-5-2 ctx 70k             <- model, context in use
+fable-5-2 ctx 70k out 12k     <- model, context in use, tokens written
 mode default git main ~6      <- permission mode; branch, changed files
 ASKED: run the tests and fix
 WANTS: Bash npm test          <- what a blocked agent is waiting to run
@@ -497,7 +516,7 @@ get the git line only. SAVE blinks when the prompt on screen offers a
 "don't ask again" option (firmware 0.4).
 
 Slots are remembered across daemon restarts
-(`~/.config/agentdeck/slots.json`), so an agent keeps its key.
+(`~/.config/agtdeck/slots.json`), so an agent keeps its key.
 
 The bottom line of every page is the **footer**: the armed prompt preset
 (`P2/8 run tests + fix`), or for a few seconds the result of what you just
@@ -536,6 +555,7 @@ buttons act at once, on press).
 | 0.6.1 | the box view's context gauge on the tile's right edge |
 | 0.6.2 | no new controls: its own package identity (`FM-1_2435N`) and USB name (`FM-1 AGTDECK`) |
 | 0.6.3 | nothing in the firmware: the first package built and signed on GitHub |
+| 0.7 | nothing new on the device. The project's files and commands were renamed from `agentdeck` to `agtdeck` (package `agtdeck-0.7.fwsc`, daemon `host/agtdeck.py`, settings in `~/.config/agtdeck`, moved there by the daemon on first start), and the daemon gained reconnect, `--doctor`, the login service, the allow-list, recent prompts and token readouts |
 
 The five screen pages, in ALGORITHM order: **GRID** (every agent, as a
 list or as boxes), **DETAIL** (the selected agent plus six lines of its
@@ -546,7 +566,7 @@ you), **MENU** and **ABOUT**.
 
 ## The host daemon
 
-`host/agentdeck.py` is a single-file Python 3 program. The core is
+`host/agtdeck.py` is a single-file Python 3 program. The core is
 standard-library only; real-MIDI mode additionally needs
 `mido` + `python-rtmidi`. Simulate mode needs nothing and is the best way
 to understand the system: it prints every frame it *would* send to the
@@ -565,13 +585,32 @@ and `enc NAME N` replay a panel control as the FM-1 would send it.
 | `--herdr-socket` | auto | explicit Herdr socket path |
 | `--herdr-session` | — | use a named Herdr session's socket |
 | `--poll` | 1.0 | backend poll interval, seconds |
-| `--config` | `~/.config/agentdeck/config.json` if present | JSON config, see below |
+| `--config` | `~/.config/agtdeck/config.json` if present | JSON config, see below |
+| `--no-wait` | off | exit when no FM-1 is found, instead of waiting for one |
+| `--doctor` | | check Python, the MIDI port, the config (and its patterns), the backend, the agent CLIs and the service; report and exit non-zero if something must be fixed. Changes nothing |
+| `--install-service` | | start the daemon at every login, with the other flags given here: a launchd agent on macOS (`~/Library/LaunchAgents/com.agtdeck.daemon.plist`, log in `~/Library/Logs/agtdeck.log`), a `systemd --user` unit on Linux |
+| `--print-service` | | show what `--install-service` would write, and write nothing |
+| `--uninstall-service` | | stop and remove it |
+| `--print-config` | | the default config as JSON |
+
+**Unplugging is fine.** Started without an FM-1, the daemon waits for
+one; when the FM-1 is unplugged it waits again, and on its return sends
+the whole state afresh. Nothing needs restarting.
+
+**Installing it as a command** (optional; running the file works as
+before): `pip install .` or `pipx install .` in a clone gives an
+`agtdeck` command, as does
+`uvx --from git+https://github.com/kevinelliott/fm-1-agent-deck agtdeck --doctor`
+without one.
 
 ### Config
 
 Optional. Copy [`host/config.example.json`](host/config.example.json) to
-`~/.config/agentdeck/config.json` (or pass `--config`); anything left out
-keeps its default.
+`~/.config/agtdeck/config.json` (or pass `--config`); anything left out
+keeps its default. There is a
+[config editor](https://kevinelliott.github.io/fm-1-agent-deck/editor/)
+in the browser (in this repo: `docs/editor/`): it builds the file for
+you to download and talks to nothing.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -582,6 +621,7 @@ keeps its default.
 | `projects` | `[]` | extra directories offered by MENU → NEW AGENT |
 | `queue_when_working` | `false` | hold a prompt for a WORKING agent until its turn is over, instead of sending it mid-turn |
 | `auto_never` | see above | regular expressions (case-insensitive); auto-approve leaves a matching prompt to you. `[]` turns the check off |
+| `auto_only` | `[]` | when not empty, an allow-list: auto-approve answers only prompts matching one of these, and never one matching `auto_never` |
 | `follow` | `false` | move the selection to an agent when it blocks |
 | `repeat_max` | `10` | repeat mode stops by itself after this many sends |
 | `nag_minutes` | `0` | chime again every N minutes while an agent stays BLOCKED (0 = off) |
@@ -597,6 +637,68 @@ keeps its default.
 
 A backend that dies or errors is reported once and retried every poll;
 it never takes the MIDI loop down.
+
+### In a container
+
+The [`Dockerfile`](Dockerfile) in the repository root packs the daemon
+with Python, mido, python-rtmidi, tmux, git and **Herdr** (release
+0.9.5, the one the daemon is verified against; the download is checked
+against a recorded SHA-256) into an image of about 120 MB:
+
+```sh
+docker build -t agtdeck .
+docker run --rm -it agtdeck --simulate --backend tmux    # no FM-1 needed
+```
+
+Everything after the image name is passed to `agtdeck.py`. To drive a
+real FM-1 the container needs the FM-1's MIDI port, the multiplexer's
+socket and, for the INFO view, Claude Code's session logs. On a Linux
+host:
+
+```sh
+docker run --rm -it \
+  --device /dev/snd \
+  --user "$(id -u):$(id -g)" --group-add "$(getent group audio | cut -d: -f3)" \
+  -v "$HOME/.config/herdr:/home/deck/.config/herdr" \
+  -v "$HOME/.config/agtdeck:/home/deck/.config/agtdeck" \
+  -v "$HOME/.claude/projects:/home/deck/.claude/projects:ro" \
+  agtdeck --backend herdr
+```
+
+For tmux, mount its socket directory at the same path
+(`-v /tmp/tmux-$(id -u):/tmp/tmux-$(id -u)`) and pass `--backend tmux`.
+
+**With its own Herdr.** Set `AGTDECK_HERDR_SERVER=1` and the container
+starts a headless Herdr server before the daemon, so the agents live in
+the container next to it:
+
+```sh
+docker run --rm -it --name deck -e AGTDECK_HERDR_SERVER=1 agtdeck --simulate
+docker exec -it deck herdr                                  # the Herdr TUI
+docker exec deck herdr workspace create --cwd /tmp --label demo
+```
+
+The image carries no agent CLIs (Claude Code, Codex, …): install the
+ones you use in an image built on this one, or mount your project and
+tools in. Without the variable the container runs only the daemon and
+uses whatever Herdr or tmux socket is mounted in, as above.
+
+What a container cannot do, and what has been tried:
+
+- **Docker Desktop on macOS and Windows does not pass USB MIDI devices
+  into containers.** There the image is good for `--simulate` only; run
+  the daemon directly on the computer to drive a real FM-1.
+- The image has been built and run on an Apple Silicon Mac: the MIDI
+  libraries load, the daemon in simulate mode finds a tmux session
+  inside the container and reads a prompt from it, and with
+  `AGTDECK_HERDR_SERVER=1` it discovers a workspace created in the
+  container's own Herdr. **The Linux command
+  above, with a real FM-1 and the host's Herdr or tmux, has not been
+  run.**
+- Things that act on the computer itself — focusing a pane's window,
+  desktop notifications, the clipboard, opening a folder, starting an
+  agent in a new worktree — reach only as far as the mounted sockets
+  and folders let them.
 
 ### Backend: Herdr (preferred)
 
@@ -655,7 +757,7 @@ an agent redraws its UI in an unusual way.
 
 ## Building the firmware
 
-`firmware/agentdeck.c` is the whole app. `firmware-build/` is a
+`firmware/agtdeck.c` is the whole app. `firmware-build/` is a
 [Dinghy](https://github.com/zvenson/dinghy) tree with that file dropped
 in as the app and its own identity (package **FM-1_2435N**, where N is
 the minor version — 0.6.2 is `FM-1_24356`; USB name `FM-1 AGTDECK`;
@@ -672,15 +774,15 @@ git clone --depth 1 --branch AC79NN_SDK_V1.2.1_2023-12-13 \
     https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git ~/fw-AC79_AIoT_SDK
 pip install mido python-rtmidi Pillow
 
-./build.sh --release 0.6.3                   # -> build/agentdeck-0.6.3.fwsc
+./build.sh --release 0.7                     # -> build/agtdeck-0.7.fwsc
 
-# host emulator test (no device, no toolchain): tests/agentdeck.txt
+# host emulator test (no device, no toolchain): tests/agtdeck.txt
 # (generated by tools/gen_host_test.py; on macOS add '-Dsection(x)=' to cc)
 # injects protocol frames, presses keys/buttons, renders the screen
 cc -O2 -Wall -Wno-unused-function -DDINGHY_HOST -DAPP_VER="\"dev\"" \
    -Ifirmware/hal -Ifirmware/src -Ifirmware/gen \
-   -o build/host/agentdeck firmware/src/dinghy.c
-build/host/agentdeck build/host/agentdeck tests/agentdeck.txt
+   -o build/host/agtdeck firmware/src/dinghy.c
+build/host/agtdeck build/host/agtdeck tests/agtdeck.txt
 
 # on-device test (the packaged .fwsc on the emulated chip, via fm1-emu):
 # run this on the package you actually ship, after every release build
@@ -697,8 +799,8 @@ Name scenes to redo just those (`tools/emu_shots.py grid about`);
 Verified 2026-11-08 (firmware 0.1): the device build passes all of
 Dinghy's checks, the `.fwsc` parses under the installer's own
 `load_package` (CRCs OK), and the emulator output is in
-`firmware/host-test.log`. As of 0.6.3 (2026-11-13) the build still
-passes those checks at 65,292 B of 581,564 for the image and 18,432 B
+`firmware/host-test.log`. As of 0.7 (2026-11-13) the build still
+passes those checks at 65,296 B of 581,564 for the image and 18,432 B
 of 98,304 of RAM. One emulator quirk worth knowing: the host
 harness stubs `fm1_input_note_edges()` to 0, so the firmware diffs
 `fm1_in.notes` levels like Dinghy's own app does — identical behaviour
@@ -728,13 +830,13 @@ for the `.fwsc` and publishes it as the release. Anyone can check that a
 package is exactly what that commit builds:
 
 ```sh
-gh attestation verify agentdeck-0.6.3.fwsc --repo kevinelliott/fm-1-agent-deck \
+gh attestation verify agtdeck-0.7.fwsc --repo kevinelliott/fm-1-agent-deck \
   --signer-workflow zvenson/fm1-build/.github/workflows/build.yml
 ```
 
 The build is reproducible: the same command in a clean clone on the
-author's Mac gave a byte-identical 0.6.3 package. To release, push a tag
-(`git tag v0.6.4 && git push origin v0.6.4`) and leave the file on the
+author's Mac gave a byte-identical package for 0.6.3 and for 0.7. To release, push a tag
+(`git tag v0.7.1 && git push origin v0.7.1`) and leave the file on the
 release alone — a package uploaded or rebuilt by hand loses the
 signature. The signature says where the file came from, not that the
 firmware is safe.
@@ -780,7 +882,7 @@ that one line is the fix.
    use M-VAVE's M-UPGRADE updater (or a browser installer's
    "Return to official V15" option) if it shipped with V16.
 3. Flash Agent Deck over USB, using the package in `dist/`:
-   `python3 firmware-build/tools/fm1_install.py dist/agentdeck-0.6.3.fwsc`
+   `python3 firmware-build/tools/fm1_install.py dist/agtdeck-0.7.fwsc`
    (or the FM-1 Firmware Hub in Chrome/Edge). The installer asks before
    it writes; the FM-1 restarts into Agent Deck.
 4. Start the daemon (`--backend auto`), watch the FM-1 screen switch
@@ -800,7 +902,8 @@ mid-write.
 
 | Symptom | Likely cause / fix |
 |---|---|
-| Daemon: "no FM-1 MIDI port found" | Unit not plugged in, not flashed with Agent Deck, or another app holds the port. `--port` prints what it sees; check the cable carries data. |
+| Not sure what is wrong | `python3 host/agtdeck.py --doctor` checks each piece and says which one fails. |
+| Daemon: "no FM-1 MIDI port found" (it then waits) | Unit not plugged in, not flashed with Agent Deck, or another app holds the port. `--port` prints what it sees; check the cable carries data. |
 | The MIDI port is still called `Felucca` after updating to 0.6.2 | Releases up to 0.6.1 used the platform's USB name, and macOS remembers a MIDI device's name. The unit itself reports `FM-1 AGTDECK` (see System Information → USB); the daemon and installer find it under either name. To refresh the name, unplug the FM-1, delete the greyed-out device in Audio MIDI Setup → MIDI Studio, and plug it back in. |
 | FM-1 shows `NO HOST` | Daemon not running, or the heartbeat isn't flowing — restart the daemon; check the screen's header after ~2 s. |
 | Daemon: "herdr socket not found" | Herdr isn't running. Start it (`herdr server` for headless) or check `--herdr-session` / `$HERDR_SOCKET_PATH`. |
@@ -824,16 +927,18 @@ steps get repeated on the real unit.
 |---|---|---|
 | **fm1-emu device test** | `python3 tools/emu_test.py` (after `tools/get_emu.sh`) | the packaged `.fwsc` booting on the emulated AC791N, daemon frame stream in via MIDI IN, all five pages and the box view rendering, ALGORITHM page walk; LCD snapshots in `build/emu-test/` |
 | fm1-emu screenshots | `python3 tools/emu_shots.py` | not a pass/fail test of behaviour: one emulator run per scene, failing only on a crash or a blank screen. Its output is the tour above, which is where a drawing mistake gets seen |
+| Daemon unit tests | `python3 host/test_daemon.py` | the daemon against a fake multiplexer and a recording device, no hardware: slots, panel controls and chords, the prompt queue and pipelines, auto-approve's never- and allow-lists, log-based states, session-log parsing, resync. Runs in CI on every push (`.github/workflows/test.yml`) and before a release is built |
 | tmux end-to-end | `sh host/test_simulate.sh` | discovery, BLOCKED/WORKING/IDLE heuristics, approve landing in the pane (`host/simulate-test.log`) |
-| Herdr live run | `python3 host/agentdeck.py --backend herdr --simulate` against a running Herdr | native states, detail text, approve/deny/interrupt/prompt/start (`host/herdr-test.log` is a captured run) |
-| Firmware host harness | the `cc …` build in [Building](#building-the-firmware) | frame parsing, screen rendering, panel event output (`firmware/host-test.log`) — fast inner loop; not a substitute for the fm1-emu run |
+| Herdr live run | `python3 host/agtdeck.py --backend herdr --simulate` against a running Herdr | native states, detail text, approve/deny/interrupt/prompt/start (`host/herdr-test.log` is a captured run) |
+| Firmware host harness | `sh tools/host_test.sh` (the `cc …` build in [Building](#building-the-firmware)) | frame parsing, screen rendering, panel event output (`firmware/host-test.log`) — fast inner loop; not a substitute for the fm1-emu run |
 
 ## Scope limits & roadmap
 
 Limits, honestly:
 
-- **USB-MIDI only.** The protocol is transport-agnostic and BLE MIDI is
-  the obvious next step, but Dinghy's BLE path is untested for this use.
+- **USB-MIDI only.** The protocol is transport-agnostic, but the
+  firmware base here (Dinghy) has no Bluetooth code at all: BLE MIDI
+  would mean writing a radio driver for the FM-1, not switching one on.
 - **No text entry on the device.** SEQ sends one of your prompt presets
   (PRESETS picks); free-form prompts are typed at the agent itself
   (27 keys ≠ a keyboard, whatever the synth pretends).
@@ -848,10 +953,9 @@ Limits, honestly:
 Roadmap ideas, in rough order: more hours on real hardware, and fixes →
 Firmware Hub listing (the Hub requires a package tested on real
 hardware; listing unlocks fm1-emu's one-click `?fw=` browser link from
-this README) → BLE MIDI transport → per-agent cost/token readouts on
-DETAIL (Herdr exposes token counters) → using `agent.send_keys` for
-named agents → more agent kinds in the tmux heuristics → a small
-menu-bar/status companion so the daemon can autostart.
+this README) → using `agent.send_keys` for named agents → more agent
+kinds in the tmux heuristics → session-log insight (tokens, recent
+prompts, turn state) for agents other than Claude Code.
 
 ## Files
 
@@ -859,14 +963,15 @@ menu-bar/status companion so the daemon can autostart.
 |---|---|
 | `PROTOCOL.md` | The wire spec (v6) |
 | `LICENSE` | GPL-3.0 |
+| `Dockerfile` · `.dockerignore` · `host/docker/entrypoint.sh` | The host daemon and Herdr as a container image |
 | `.github/workflows/release.yml` | Builds, signs and publishes the package when a version tag is pushed |
 | `fmhub.json` · `docs/card.png` | The card text, links and picture for [The Firmware Hub](https://thefirmwarehub.com/) |
 | `docs/cheatsheet.html` | The controls on one page, served by GitHub Pages |
-| `host/agentdeck.py` | The daemon: Herdr + tmux backends, MIDI + simulate modes |
+| `host/agtdeck.py` | The daemon: Herdr + tmux backends, MIDI + simulate modes |
 | `host/test_simulate.sh` | End-to-end simulate test against real tmux panes |
 | `host/simulate-test.log` | Latest tmux test run — ALL PASS |
 | `host/herdr-test.log` | Live Herdr-backend simulate run (Herdr 0.9.5) |
-| `firmware/agentdeck.c` | The firmware app |
+| `firmware/agtdeck.c` | The firmware app |
 | `firmware/host-test.log` | Emulator run of the exact shipped source |
 | `firmware/screen-grid.png` | The GRID page as rendered by the host harness |
 | `tools/emu_test.py` | fm1-emu device test: boots the packaged `.fwsc`, injects daemon frames, walks the pages, snapshots the LCD |
@@ -877,9 +982,9 @@ menu-bar/status companion so the daemon can autostart.
 | `docs/play/` | The self-hosted live player: vendored fm1-emu (MIT) + Agent Deck catalog + the auto-play demo script, served by GitHub Pages |
 | `docs/fm1-agent-deck-hero.jpg` | The FM-1 picture (White and Blue) the animation is built on, with the GRID page in its display |
 | `firmware-build/` | Dinghy tree + Agent Deck identity; `./build.sh` here |
-| `dist/agentdeck-0.6.3.fwsc` | The firmware package, ready to flash: a copy of the signed file on the `v0.6.3` release. `-0.6.2` is the one installed on the author's FM-1; `-0.6.1` … `-0.1` are earlier releases |
+| `dist/agtdeck-0.7.fwsc` | The firmware package, ready to flash: a copy of the signed file on the `v0.7` release. Earlier releases are `dist/agentdeck-0.6.3.fwsc` … `-0.1.fwsc`, under the name the project used then; `-0.6.2` is the one installed on the author's FM-1 |
 | `host/config.example.json` | Example daemon config (prompt presets, default agent) |
-| `tools/gen_host_test.py` | Generates the host-harness session `firmware-build/tests/agentdeck.txt` |
+| `tools/gen_host_test.py` | Generates the host-harness session `firmware-build/tests/agtdeck.txt` |
 
 ## Credits
 

@@ -12,6 +12,7 @@
   ],
   "queue_when_working": false,
   "auto_never": ["\\brm\\s+-\\w*[rf]", "git\\s+push", "git\\s+reset\\s+--hard", "\\bsudo\\b", "--force\\b"],
+  "auto_only": [],
   "follow": false,
   "default_agent": "claude",
   "agents": {"claude": "claude", "codex": "codex"},

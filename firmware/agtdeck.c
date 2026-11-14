@@ -4,7 +4,7 @@
  * A Dinghy app (platform.c below is Felucca/SLOOP's, via Dinghy — see
  * LICENSING.md in the Dinghy tree). The synth engine is gone; the only
  * sound left is a handful of alert chimes the host asks for. The panel
- * talks to a host daemon (host/agentdeck.py) over USB-MIDI channel 16; the
+ * talks to a host daemon (host/agtdeck.py) over USB-MIDI channel 16; the
  * wire format is PROTOCOL.md in this project (this is protocol v6). In short:
  *
  *   out: keys = Note On/Off 48..74 (a press also selects the slot),
@@ -770,7 +770,7 @@ static void draw_content(void)
                 char s[32];
                 put_str_r(put_str_r(s, "WAITING FOR THE HOST"), DOTS[(fm1_ms / 500u) & 3u]);
                 cv_text((240 - text_w(&FONT_S, "WAITING FOR THE HOST")) / 2, 84, &FONT_S, s, C_WARN);
-                ctext(106, &FONT_S, "run host/agentdeck.py", C_ACC);
+                ctext(106, &FONT_S, "run host/agtdeck.py", C_ACC);
                 ctext(126, &FONT_S, "on the computer", C_GREY);
             }
         } else if (set.boxes)

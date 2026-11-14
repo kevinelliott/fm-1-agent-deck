@@ -1,0 +1,29 @@
+# Tests on every push and pull request: the daemon's unit tests, a lint, and
+# the firmware built for the host and run through its scripted session.
+name: test
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683   # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065   # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Daemon unit tests
+        run: python3 host/test_daemon.py
+      - name: Lint
+        run: |
+          python3 -m pip install pyflakes
+          python3 -m pyflakes host/agtdeck.py host/test_daemon.py tools/emu_test.py tools/emu_shots.py tools/gen_host_test.py
+      - name: The two copies of the firmware source match
+        run: cmp firmware/agtdeck.c firmware-build/firmware/src/dinghy.c
+      - name: Firmware host harness
+        run: sh tools/host_test.sh

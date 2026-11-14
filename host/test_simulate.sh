@@ -36,7 +36,7 @@ kill_sessions
 cat > "$TMP/approve.sh" <<'EOF'
 #!/bin/bash
 echo "Claude Code (fake fixture for Agent Deck test)"
-echo "I want to edit host/agentdeck.py to add a feature."
+echo "I want to edit host/agtdeck.py to add a feature."
 echo "Do you want to proceed?"
 echo " > 1. Yes"
 echo "   2. No, and tell Claude what to do differently"
@@ -67,7 +67,7 @@ sleep 1
     sleep 2; echo "select 0"
     sleep 2; echo "approve"
     sleep 3; echo "quit"
-} | python3 host/agentdeck.py --backend tmux --simulate > "$LOG" 2>&1
+} | python3 host/agtdeck.py --backend tmux --simulate > "$LOG" 2>&1
 
 cat "$LOG"
 echo "--- checks ---" | tee -a "$LOG"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate firmware-build/tests/agentdeck.txt, the host-harness session.
+"""Generate firmware-build/tests/agtdeck.txt, the host-harness session.
 
 The harness (firmware-build/tests/host.c) replays a script of timed panel
 and MIDI events against the natively compiled app. Frames are tedious to
@@ -19,7 +19,7 @@ Usage: python3 tools/gen_host_test.py   (rewrites the script in place)
 import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(ROOT, "firmware-build", "tests", "agentdeck.txt")
+OUT = os.path.join(ROOT, "firmware-build", "tests", "agtdeck.txt")
 
 CC_CTRL, CC_DATA = 118, 119
 FT_SLOT, FT_DETAIL, FT_META, FT_FOOTER, FT_BEEP, FT_SELECT, FT_TEXT, \
@@ -67,7 +67,7 @@ frame(FT_SLOT, bytes([1, 3, 2 | KIND_MARK | KIND_QUEUE]) + b"web-frontend")  # B
 frame(FT_GAUGE, [0, 42])                                # context gauges (v5)
 frame(FT_GAUGE, [1, 91])
 frame(FT_SLOT, bytes([2, 4, 1]) + b"docs")                      # DONE claude
-for i, line in enumerate(["Edit host/agentdeck.py",
+for i, line in enumerate(["Edit host/agtdeck.py",
                           "  + def approve_always(self):",
                           "Running: pytest -q",
                           "41 passed in 2.31s",

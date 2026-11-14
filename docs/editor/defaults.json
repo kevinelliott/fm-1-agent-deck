@@ -1,0 +1,74 @@
+{
+  "presets": [
+    "continue",
+    {
+      "label": "run tests + fix",
+      "text": "Run the test suite and fix any failures."
+    },
+    {
+      "label": "summarize",
+      "text": "Summarize what you have done so far and what is left."
+    },
+    {
+      "label": "review changes",
+      "text": "Review your changes for bugs and edge cases, then fix what you find."
+    },
+    {
+      "label": "commit",
+      "text": "Commit your work with a clear commit message."
+    },
+    {
+      "label": "explain blocker",
+      "text": "Explain what you are waiting on and what you need from me."
+    },
+    {
+      "label": "test > review > commit",
+      "steps": [
+        "Run the test suite and fix any failures.",
+        "Review your changes for bugs and edge cases, then fix what you find.",
+        "Commit your work with a clear commit message."
+      ]
+    },
+    "/compact",
+    "/clear"
+  ],
+  "default_agent": "claude",
+  "agents": {
+    "claude": "claude",
+    "codex": "codex",
+    "opencode": "opencode",
+    "grok": "grok",
+    "copilot": "copilot"
+  },
+  "spawn_cwd": null,
+  "projects": [],
+  "queue_when_working": false,
+  "auto_never": [
+    "\\brm\\s+-\\w*[rf]",
+    "git\\s+push",
+    "git\\s+reset\\s+--hard",
+    "\\bsudo\\b",
+    "--force\\b",
+    "drop\\s+(table|database)",
+    "\\bmkfs\\b|\\bdd\\s+if="
+  ],
+  "auto_only": [],
+  "follow": false,
+  "repeat_max": 10,
+  "nag_minutes": 0,
+  "open_cmd": "open",
+  "commands": [
+    "/compact",
+    "/clear",
+    "/context",
+    "/review",
+    "/status"
+  ],
+  "ctx_window": 200000,
+  "ctx_warn_pct": 80,
+  "notify": false,
+  "sounds": true,
+  "ui_sounds": true,
+  "alert": "loud",
+  "focus_on_edit": true
+}

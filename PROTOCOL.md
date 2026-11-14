@@ -1,7 +1,7 @@
 # Agent Deck wire protocol v6
 
 How the FM-1 (running the Agent Deck firmware, a Dinghy fork) and the host
-daemon (`host/agentdeck.py`) talk. Everything runs over **USB-MIDI, channel 16**
+daemon (`host/agtdeck.py`) talk. Everything runs over **USB-MIDI, channel 16**
 (status byte low nibble `0xF`). BLE MIDI is a possible later transport — the
 protocol is transport-agnostic — but for now it is USB only.
 
@@ -201,8 +201,8 @@ every chime at once.
 
 ## Versioning
 
-`PROTO_VERSION = 6` in both the firmware (`firmware/agentdeck.c`) and the
-daemon (`host/agentdeck.py`). The device announces its version in the boot
+`PROTO_VERSION = 6` in both the firmware (`firmware/agtdeck.c`) and the
+daemon (`host/agtdeck.py`). The device announces its version in the boot
 hello (CC 117) and in every heartbeat (CC 116); the host echoes its own in
 HELLO_ACK. Either side can be the older one:
 

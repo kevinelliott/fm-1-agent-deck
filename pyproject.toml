@@ -1,0 +1,33 @@
+# The host daemon as an installable command:
+#   pip install .            (or: pipx install . / uv tool install .)
+#   agtdeck --doctor
+# From GitHub without a clone:
+#   uvx --from git+https://github.com/kevinelliott/fm-1-agent-deck agtdeck --doctor
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fm1-agtdeck"
+dynamic = ["version"]
+description = "Host daemon for Agent Deck: an M-VAVE FM-1 as a control surface for CLI coding agents"
+readme = "README.md"
+license = { text = "GPL-3.0-only" }
+requires-python = ">=3.8"
+authors = [{ name = "Kevin Elliott" }]
+keywords = ["fm-1", "midi", "claude-code", "coding-agents", "herdr", "tmux"]
+# the MIDI link; `agtdeck --simulate` works without them
+dependencies = ["mido>=1.3", "python-rtmidi>=1.5"]
+
+[project.urls]
+Homepage = "https://github.com/kevinelliott/fm-1-agent-deck"
+
+[project.scripts]
+agtdeck = "agtdeck:main"
+
+[tool.setuptools]
+package-dir = { "" = "host" }
+py-modules = ["agtdeck"]
+
+[tool.setuptools.dynamic]
+version = { attr = "agtdeck.VERSION" }

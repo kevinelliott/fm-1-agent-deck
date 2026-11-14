@@ -1,6 +1,6 @@
-[agentdeck] backend=herdr mode=simulate proto=v1
-[agentdeck] herdr socket: /home/hatch/.config/herdr/herdr.sock
-[agentdeck] commands: select N | start | approve | deny | interrupt | prompt TEXT | quit
+[agtdeck] backend=herdr mode=simulate proto=v1
+[agtdeck] herdr socket: /home/hatch/.config/herdr/herdr.sock
+[agtdeck] commands: select N | start | approve | deny | interrupt | prompt TEXT | quit
 [frame] HELLO_ACK proto=1
 [discover] slot 0: claude w1:p1 (id=w1:p1, kind=claude)
 [discover] slot 1: ad-claude-w1-p2 (id=w1:p2, kind=claude)
@@ -20,4 +20,4 @@
 [frame] DETAIL line=7: root@htch-runtime:~/workspace/fm1-agent-deck#
 [select] slot 0 (claude w1:p1)
 [action] approve -> slot 0 (claude w1:p1)
-[agentdeck] bye
+[agtdeck] bye

@@ -10,7 +10,7 @@ input, the wire protocol) is tested here, against the package, until —
 and after — real hardware is on the desk.
 
 What it does:
-  1. Boots the newest dist/agentdeck-*.fwsc in the fm1-emu batch runner.
+  1. Boots the newest dist/agtdeck-*.fwsc in the fm1-emu batch runner.
   2. Injects, through the FM-1's MIDI IN jack (the firmware's platform
      merges TRS MIDI into the same queue as USB MIDI), the exact CC
      frame stream the real daemon sends on a full resync: RESET,
@@ -62,7 +62,7 @@ FRAME_END, FRAME_RESET = 0x20, 0x7F
 def frame_stream():
     """The daemon's full-resync frame stream as (ctrl, value) CC pairs.
 
-    Mirrors host/agentdeck.py Daemon.poll_once(full=True) for a roster of
+    Mirrors host/agtdeck.py Daemon.poll_once(full=True) for a roster of
     CLAUDE-1 (WORKING, claude) in slot 0 and CODEX-2 (BLOCKED, codex) in
     slot 1, with detail lines for the selected slot 0.
     """
@@ -89,7 +89,7 @@ def frame_stream():
     frame(FT_GAUGE, bytes([1, 91]))
     for i, line in enumerate([
             "claude code - agent deck",
-            "editing host/agentdeck.py",
+            "editing host/agtdeck.py",
             "tests: pytest -q",
             "34 passed, 0 failed"]):
         frame(FT_DETAIL, bytes([i]) + line.encode())
@@ -130,10 +130,10 @@ def newest_fwsc():
     import glob
     def ver(p):
         return [int(x) for x in re.findall(r"\d+", os.path.basename(p))]
-    found = sorted(glob.glob(os.path.join(ROOT, "dist", "agentdeck-*.fwsc")),
+    found = sorted(glob.glob(os.path.join(ROOT, "dist", "agtdeck-*.fwsc")),
                    key=ver)
     return found[-1] if found else os.path.join(ROOT, "dist",
-                                                "agentdeck.fwsc")
+                                                "agtdeck.fwsc")
 
 
 def find_emu():

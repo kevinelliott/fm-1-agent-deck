@@ -38,7 +38,7 @@
 <body>
 <main>
   <h1>Agent <span>Deck</span> cheat sheet</h1>
-  <p class="lede">Firmware 0.6 for the M-VAVE FM-1. Every action goes to the selected agent
+  <p class="lede">Firmware 0.7 for the M-VAVE FM-1. Every action goes to the selected agent
   unless a chord names another one. The deck needs its daemon running on the computer.</p>
 
   <div class="grid">
@@ -137,7 +137,7 @@
         <tr><td>THIS AGENT</td><td>view, repeat, auto-approve, mark, mute, queue, commands, focus, copy reply, open folder</td></tr>
         <tr><td>FLEET</td><td>every agent on one screen; mark all</td></tr>
         <tr><td>NEW AGENT</td><td>pick a CLI and a directory, optionally a new git worktree</td></tr>
-        <tr><td>SEND PROMPT</td><td>send now or queue; again; the presets</td></tr>
+        <tr><td>SEND PROMPT</td><td>send now or queue; again; recent prompts; the presets</td></tr>
         <tr><td>EVENT LOG</td><td>who blocked, finished, was approved</td></tr>
         <tr><td>CLOSE AGENT</td><td>close the pane, after a yes / no</td></tr>
         <tr><td>SETTINGS</td><td>sounds, alert, nag, notifications, follow</td></tr>
@@ -147,7 +147,7 @@
 
   <footer>Full reference, setup and the daemon's options:
     <a href="https://github.com/kevinelliott/fm-1-agent-deck#controls-reference">the README</a>.
-    Auto-approve checks prompts against a list of risky patterns; it is a text match, not a sandbox.</footer>
+    Auto-approve checks prompts against a list of risky patterns (and an allow-list, if you set one); it is a text match, not a sandbox.</footer>
 </main>
 </body>
 </html>

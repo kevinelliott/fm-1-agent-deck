@@ -5,7 +5,7 @@ emulator with Agent Deck as its only firmware, published via GitHub
 Pages so the README can link a deck that actually runs.
 
 - **Player (full page):** `index.html` at this folder's Pages URL
-- **Auto-playing demo:** add `?fw=agentdeck&script=demo.txt` — the
+- **Auto-playing demo:** add `?fw=agtdeck&script=demo.txt` — the
   emulator's try-out mode plays `demo.txt` by itself after the page's
   one Start click (browsers gate sound behind a click; the deck is
   silent, but the emulator's audio thread is what starts): the
@@ -40,6 +40,6 @@ Local changes versus upstream, deliberately minimal:
 To refresh the player: download the same file list from the upstream
 site again, re-apply the two changes above, and re-check the demo.
 
-`agentdeck-0.6.3.fwsc` is a copy of `../../dist/agentdeck-0.6.3.fwsc` —
+`agtdeck-0.7.fwsc` is a copy of `../../dist/agtdeck-0.7.fwsc` —
 refresh it when the firmware version changes (and update
 `firmwares.json`'s version field to match).

@@ -62,10 +62,16 @@ needs `mido` (+ `python-rtmidi`), imported lazily, so `--simulate` runs
 anywhere.
 
 Usage:
-  python3 agentdeck.py --backend auto|herdr|tmux [--simulate]
+  python3 agtdeck.py --backend auto|herdr|tmux [--simulate]
                        [--port SUBSTRING] [--herdr-session NAME]
                        [--herdr-socket PATH] [--poll SECONDS]
-                       [--config PATH]
+                       [--config PATH] [--no-wait]
+  python3 agtdeck.py --doctor              check the setup and report
+  python3 agtdeck.py --install-service     start at every login
+  python3 agtdeck.py --uninstall-service
+
+Without an FM-1 the daemon waits for one, and when the FM-1 is unplugged it
+waits for it to come back and sends everything again.
 
 Simulate mode reads commands from stdin, one per line:
   select N | start | approve | always | deny | interrupt | enter | mode
@@ -96,7 +102,7 @@ import time
 import types
 
 PROTO_VERSION = 6
-VERSION = "0.6.3"               # the daemon's own, shown on ABOUT
+VERSION = "0.7"               # the daemon's own, shown on ABOUT
 
 # --- protocol constants (PROTOCOL.md) ---------------------------------------
 CH = 0x0F                      # MIDI channel 16 (low nibble)
@@ -193,6 +199,10 @@ DEFAULT_CONFIG = {
     "auto_never": [r"\brm\s+-\w*[rf]", r"git\s+push", r"git\s+reset\s+--hard",
                    r"\bsudo\b", r"--force\b", r"drop\s+(table|database)",
                    r"\bmkfs\b|\bdd\s+if="],
+    # The other way round: when this list is not empty, auto-approve answers
+    # ONLY a prompt that matches one of these (same matching), and leaves
+    # every other prompt to you. auto_never still wins over it.
+    "auto_only": [],
     # When an agent blocks, move the selection to it (unless the selected
     # agent is itself waiting on you).
     "follow": False,
@@ -221,10 +231,23 @@ DEFAULT_CONFIG = {
 }
 
 
+def adopt_old_config_dir():
+    """Up to 0.6 the settings lived in ~/.config/agentdeck. Move that
+    directory to its new name once, so slots and config carry over."""
+    new = os.path.expanduser("~/.config/agtdeck")
+    old = os.path.expanduser("~/.config/agent" + "deck")
+    if os.path.isdir(old) and not os.path.exists(new):
+        try:
+            os.rename(old, new)
+            print("[agtdeck] moved %s to %s" % (old, new))
+        except OSError as e:
+            print("[agtdeck] could not move %s: %s" % (old, e))
+
+
 def load_config(path):
     cfg = json.loads(json.dumps(DEFAULT_CONFIG))        # deep copy
     explicit = path is not None
-    path = os.path.expanduser(path or "~/.config/agentdeck/config.json")
+    path = os.path.expanduser(path or "~/.config/agtdeck/config.json")
     if not os.path.exists(path):
         if explicit:
             raise BackendError("config file not found: %s" % path)
@@ -309,6 +332,19 @@ class MidiLink:
                 "  (or use --simulate)")
         self._mido = mido
         self.event_q = event_q
+        pick_in, pick_out, ins, outs = self.find_ports(mido, port_substr)
+        if not pick_in or not pick_out:
+            raise BackendError(
+                "no FM-1 MIDI port found.\n  inputs:  %s\n  outputs: %s"
+                % (ins or "(none)", outs or "(none)"))
+        self.names = (pick_in, pick_out)
+        self.out = mido.open_output(pick_out)
+        self.inp = mido.open_input(pick_in, callback=self._cb)
+        print("[midi] in=%r out=%r" % (pick_in, pick_out))
+
+    @staticmethod
+    def find_ports(mido, port_substr=None):
+        """(input name, output name, all inputs, all outputs)."""
         want = [port_substr] if port_substr else []
         # "AGTDECK" is the USB name from firmware 0.6.2 on; "Felucca" (the
         # platform's own name) is how a unit on 0.6.1 or older shows up.
@@ -319,13 +355,22 @@ class MidiLink:
                         if w.lower() in n.lower()), None)
         pick_out = next((n for w in want for n in outs
                          if w.lower() in n.lower()), None)
-        if not pick_in or not pick_out:
-            raise BackendError(
-                "no FM-1 MIDI port found.\n  inputs:  %s\n  outputs: %s"
-                % (ins or "(none)", outs or "(none)"))
-        self.out = mido.open_output(pick_out)
-        self.inp = mido.open_input(pick_in, callback=self._cb)
-        print("[midi] in=%r out=%r" % (pick_in, pick_out))
+        return pick_in, pick_out, ins, outs
+
+    def alive(self):
+        """False once the FM-1's ports are gone (unplugged, switched off)."""
+        try:
+            return self.names[0] in self._mido.get_input_names() and \
+                self.names[1] in self._mido.get_output_names()
+        except Exception:
+            return False
+
+    def close(self):
+        for port in (self.inp, self.out):
+            try:
+                port.close()
+            except Exception:
+                pass
 
     def _cb(self, msg):
         self.event_q.put(("midi", msg))
@@ -343,6 +388,16 @@ class MidiLink:
 
     def reset(self):
         self._cc(CC_FRAME_CTRL, FRAME_RESET)
+
+
+class NullLink:
+    """No FM-1 right now: frames go nowhere until it is plugged in again."""
+
+    def frame(self, ftype, payload):
+        pass
+
+    def reset(self):
+        pass
 
 
 class SimulateLink:
@@ -518,6 +573,14 @@ class TmuxBackend:
                 state = "DONE"
             else:
                 state = "IDLE"
+            if state == "IDLE" and kind == "claude":
+                # A quiet screen is not always an idle agent (a long tool
+                # call prints nothing). Claude Code's own log knows: a turn
+                # it has not ended, written to in the last two minutes.
+                i = claude_insight({"kind": kind, "cwd": cwd})
+                if i.get("turn") == "open" and \
+                        now - i.get("mtime", 0.0) < 120.0:
+                    state = "WORKING"
             agents.append({
                 "id": pane_id,
                 "name": sess if sess else pane_id,
@@ -649,7 +712,7 @@ class HerdrBackend:
         """
         with self._lock:
             self._id += 1
-            rid = "agentdeck-%d" % self._id
+            rid = "agtdeck-%d" % self._id
         req = {"id": rid, "method": method, "params": params or {}}
         s = None
         try:
@@ -701,7 +764,7 @@ class HerdrBackend:
             s.settimeout(30.0)
             s.connect(self.path)
             f = s.makefile("r", encoding="utf-8", newline="\n")
-            s.sendall(b'{"id": "agentdeck-events",'
+            s.sendall(b'{"id": "agtdeck-events",'
                       b' "method": "events.subscribe", "params":'
                       b' {"subscriptions": [{"type": "pane.created"},'
                       b' {"type": "pane.closed"}, {"type": "pane.updated"},'
@@ -902,7 +965,7 @@ def claude_session_path(agent):
 
 
 def tool_summary(name, inp):
-    """A tool call in a few words: `Bash npm test`, `Edit agentdeck.py`."""
+    """A tool call in a few words: `Bash npm test`, `Edit agtdeck.py`."""
     inp = inp if isinstance(inp, dict) else {}
     for key in ("command", "file_path", "path", "pattern", "url", "query",
                 "description", "prompt"):
@@ -915,8 +978,13 @@ def tool_summary(name, inp):
 
 
 def claude_insight(agent, tail_bytes=768 * 1024):
-    """{title, prompt, mode, model, ctx, pending, doing, said, todo} from the
-    session log, or {}."""
+    """{title, prompt, prompts, mode, model, ctx, out, turn, age, pending,
+    doing, said, todo} from the session log, or {}.
+
+    out: output tokens over the part of the log that was read (the tail of
+    a long session, so a floor, not a total). prompts: what the user typed,
+    newest last. turn: "open" while the agent still owes an answer, "ended"
+    once it stopped by itself. mtime: when the log was last written."""
     if agent.get("kind") != "claude":
         return {}
     try:
@@ -937,6 +1005,8 @@ def claude_insight(agent, tail_bytes=768 * 1024):
         return {}
     info = {}
     open_tools = {}                            # tool_use id -> summary
+    out_by_msg = {}                            # message id -> output tokens
+    prompts = []
     for line in raw.splitlines():
         if len(line) > 400000:
             continue                           # request blobs: not for us
@@ -967,6 +1037,28 @@ def claude_insight(agent, tail_bytes=768 * 1024):
                     "cache_read_input_tokens"))
                 if ctx:
                     info["ctx"] = ctx
+                if u.get("output_tokens"):     # one message spans several
+                    out_by_msg[msg.get("id") or len(out_by_msg)] = \
+                        int(u["output_tokens"])        # lines: count it once
+                stop = msg.get("stop_reason")
+                if stop:
+                    info["turn"] = "ended" if stop in (
+                        "end_turn", "stop_sequence", "max_tokens",
+                        "refusal") else "open"
+            elif not d.get("isMeta"):          # what the user typed
+                said = content if isinstance(content, str) else " ".join(
+                    str(b.get("text") or "") for b in content
+                    if isinstance(b, dict) and b.get("type") == "text") \
+                    if isinstance(content, list) else ""
+                said = " ".join(said.split())
+                if said.startswith("[Request interrupted"):
+                    info["turn"] = "ended"     # Esc: the turn is over
+                    open_tools.clear()
+                elif said and not said.startswith(("<", "[", "Caveat:")):
+                    if said in prompts:
+                        prompts.remove(said)
+                    prompts.append(said)
+                    info["turn"] = "open"
             for block in content if isinstance(content, list) else []:
                 if not isinstance(block, dict):
                     continue
@@ -995,6 +1087,12 @@ def claude_insight(agent, tail_bytes=768 * 1024):
                     open_tools.pop(block.get("tool_use_id"), None)
     if open_tools:
         info["pending"] = list(open_tools.values())[-1]
+        info["turn"] = "open"
+    if out_by_msg:
+        info["out"] = sum(out_by_msg.values())
+    if prompts:
+        info["prompts"] = prompts[-8:]
+    info["mtime"] = st.st_mtime
     _insight_cache[path] = (sig, info)
     return info
 
@@ -1203,7 +1301,7 @@ HELP_LINES = [
     "SEL+K1    scroll a page", "LFO+K4    marked agents",
     "SEQ > blocked: queued",
     "MASTER    chime volume"]
-SLOTS_FILE = "~/.config/agentdeck/slots.json"
+SLOTS_FILE = "~/.config/agtdeck/slots.json"
 
 
 def fmt_age(secs):
@@ -1355,7 +1453,8 @@ class Daemon:
             out.append(i["title"])
         head = " ".join(x for x in (
             i.get("model", "").replace("claude-", ""),
-            "ctx %s" % fmt_tokens(i["ctx"]) if i.get("ctx") else "") if x)
+            "ctx %s" % fmt_tokens(i["ctx"]) if i.get("ctx") else "",
+            "out %s" % fmt_tokens(i["out"]) if i.get("out") else "") if x)
         if head:
             out.append(head)
         git = git_summary(a.get("cwd"))
@@ -1554,6 +1653,7 @@ class Daemon:
             print("[backend] %s is back" % self.backend.name)
             self.last_error = None
         self._dedupe_names(agents)
+        self._refine_states(agents)
         self._assign_slots(agents)
         agents = [a for a in agents if a["id"] in self.slots]
         self.roster = {self.slots[a["id"]]: a for a in agents}
@@ -1636,6 +1736,28 @@ class Daemon:
         if self.dev_page == PAGE_MENU:
             self._menu_render()                # its ages and names move
 
+    def _refine_states(self, agents):
+        """Correct IDLE from the agent's own log, where the multiplexer
+        names the session (so the log is surely this agent's). A Claude
+        Code turn that is still open is not idle: written to in the last
+        20 s it is WORKING (multiplexers blink idle between tool calls);
+        quiet for longer it is waiting on a prompt the screen does not
+        show (a scrolled view), so BLOCKED, flagged "unseen" so that
+        auto-approve leaves it to the user."""
+        now = time.time()
+        for a in agents:
+            if a["state"] != "IDLE" or a["kind"] != "claude" or \
+                    not a.get("session"):
+                continue
+            i = claude_insight(a)
+            age = now - i.get("mtime", 0.0)
+            if i.get("turn") != "open" or age > 600.0:
+                continue
+            if age < 20.0:
+                a["state"] = "WORKING"
+            else:
+                a["state"], a["unseen"] = "BLOCKED", True
+
     def _auto_approve(self, agents):
         now = time.time()
         for a in agents:
@@ -1650,7 +1772,9 @@ class Daemon:
                         self.auto_held.add(a["id"])
                         print("[auto] HELD for %s: matches %r"
                               % (a["name"], risky))
-                        self.toast("AUTO HELD %s: YOU DECIDE" % a["name"],
+                        self.toast("AUTO HELD %s: %s" % (a["name"], "NOT ON LIST"
+                                   if risky == "(not on auto_only)"
+                                   else "YOU DECIDE"),
                                    F_WARN, 6.0, beep=None if a["id"] in
                                    self.muted else BEEP_ALERT)
                         self.log_event("%s auto held" % a["name"])
@@ -1665,28 +1789,50 @@ class Daemon:
                 self.poll_soon = now + 0.4
 
     def _auto_risky(self, a):
-        """The auto_never pattern the agent's prompt matches, or None. Looks
-        at what it wants to run and at the screen; when it cannot read the
-        screen it says so, and that holds the approval too."""
-        pats = [str(x) for x in self.cfg.get("auto_never") or [] if x]
-        if not pats:
+        """Why auto-approve must leave this prompt alone, or None: the
+        auto_never pattern it matches, or "(not on auto_only)" when there is
+        an allow-list and nothing on it matches. Looks at what the agent
+        wants to run and at the screen; when it cannot read the screen it
+        says so, and that holds the approval too."""
+        if a.get("unseen"):                    # nothing to check it against
+            return "(prompt not on screen)"
+        never = [str(x) for x in self.cfg.get("auto_never") or [] if x]
+        only = [str(x) for x in self.cfg.get("auto_only") or [] if x]
+        if not never and not only:
             return None
         try:
             screen = self.backend.read_lines(a["id"], 30)[-30:]
         except Exception:
             return "(screen unreadable)"
         text = "\n".join([claude_insight(a).get("pending") or ""] + screen)
-        for pat in pats:
-            try:
-                if re.search(pat, text, re.I):
-                    return pat
-            except re.error:
-                print("[auto] bad auto_never pattern %r" % pat)
+
+        def hit(pats, what):
+            for pat in pats:
+                try:
+                    if re.search(pat, text, re.I):
+                        return pat
+                except re.error:
+                    print("[auto] bad %s pattern %r" % (what, pat))
+            return None
+        bad = hit(never, "auto_never")
+        if bad:
+            return bad
+        if only and not hit(only, "auto_only"):
+            return "(not on auto_only)"
         return None
+
+    QUEUE_SETTLE = 3.0             # seconds at rest before a queued send
 
     def _queue_step(self, agents):
         """Send each agent's next queued prompt once it is at rest. After a
-        send, wait to see it WORKING (or 15 s) before sending another."""
+        send, wait to see it WORKING (or 15 s) before sending another.
+
+        At rest means settled: a multiplexer can report a busy agent as
+        idle for a moment between two tool calls, and a prompt typed then
+        lands in the permission dialog that follows. So the agent must have
+        been at rest for QUEUE_SETTLE seconds, and a Claude Code agent's own
+        log must not show a turn still open (one it has neither ended nor
+        had interrupted; a log untouched for ten minutes is not trusted)."""
         now = time.time()
         for a in agents:
             q = self.queue.get(a["id"])
@@ -1697,15 +1843,27 @@ class Daemon:
                 continue
             if a["state"] == "WORKING":
                 q["wait"] = False
+                q.pop("rest", None)
                 continue
             if a["state"] not in ("IDLE", "DONE"):
+                q.pop("rest", None)
                 continue                       # BLOCKED / ERROR: hold
             if q["wait"] and now - q["t"] < 15.0:
                 continue
+            if now - q.setdefault("rest", now) < self.QUEUE_SETTLE:
+                self.poll_soon = now + min(1.0, self.QUEUE_SETTLE)
+                continue
+            if a["kind"] == "claude":
+                i = claude_insight(a)
+                if i.get("turn") == "open" and \
+                        now - i.get("mtime", 0.0) < 600.0:
+                    continue                   # mid-turn, whatever the
+                                               # multiplexer says
             text, tag = q["items"][0]
             print("[queue] %s -> %s (%d left)" % (
                 tag, a["name"], len(q["items"]) - 1))
             q["wait"], q["t"] = True, now
+            q.pop("rest", None)
             if self._run(a, "prompt", text):
                 q["items"].pop(0)
                 self.toast("QUEUE %s > %s (%d LEFT)" % (
@@ -2446,6 +2604,11 @@ class Daemon:
                 fmt_age(now - self.state_since.get(a["id"], now)),
                 fmt_tokens(ctx) if ctx else ""),
                 lambda slot=slot: self.goto_agent(slot)))
+        ins = [claude_insight(a) for a in self.roster.values()]
+        if any(i.get("ctx") or i.get("out") for i in ins):
+            items.append(("TOKENS ctx %s out %s" % (
+                fmt_tokens(sum(i.get("ctx") or 0 for i in ins)),
+                fmt_tokens(sum(i.get("out") or 0 for i in ins))), None))
         title = "FLEET %d" % len(self.roster) + "".join(
             " %d%s" % (counts[st], GLYPH[st]) for st in
             ("BLOCKED", "WORKING", "DONE", "ERROR", "IDLE") if counts[st])
@@ -2496,12 +2659,27 @@ class Daemon:
         if last:                               # what it was asked last time
             items.append(("AGAIN: %s" % last,
                           lambda: self.send_text([last], "AGAIN")))
+        if a and claude_insight(a).get("prompts"):
+            items.append(("RECENT PROMPTS", self._menu_push(self._m_recent)))
         for i, p in enumerate(self.presets):
             def go(i=i):
                 self.preset = i
                 self.send_preset()
             items.append(("%d %s" % (i + 1, p["label"]), go))
         return "PROMPT > %s" % self._target(), items
+
+    def _m_recent(self):
+        """What was typed at this agent lately (Claude Code), newest first:
+        the nearest the deck gets to free text."""
+        a = self.roster.get(self.selected)
+        items = []
+        for text in reversed((claude_insight(a).get("prompts") or [])
+                             if a else []):
+            def go(text=text):
+                self.send_text([text], "RECENT")
+            items.append((text, go))
+        return "RECENT > %s" % self._target(), \
+            items or [("(nothing yet)", None)]
 
     def _m_log(self):
         now = time.time()
@@ -2572,8 +2750,10 @@ class Daemon:
     def about_lines(self):
         system = {"Darwin": "macOS", "Linux": "Linux"}.get(
             platform.system(), platform.system() or "?")
+        old = self.dev_proto < PROTO_VERSION
         return ["%s via %s" % (VERSION, self.backend.name),
-                "%s, python %s" % (system, ".".join(
+                "UPDATE FIRMWARE: v%d < v%d" % (self.dev_proto, PROTO_VERSION)
+                if old else "%s, python %s" % (system, ".".join(
                     platform.python_version_tuple()[:2])),
                 "firmware protocol v%d" % self.dev_proto,
                 "%d agents" % len(self.roster)]
@@ -2785,6 +2965,21 @@ class Daemon:
         # SELECT elsewhere: the device moves its cursor and reports CC 120.
         # ALGORITHM: the device's page; nothing for the host to do.
 
+    def full_resync(self):
+        """Forget what the device was sent and send it all again: after its
+        hello, and when it comes back from being unplugged."""
+        self.need_reset = True
+        self.held.clear()
+        self.chord = None
+        self.sent_text.clear()
+        self.sent_btnleds = None
+        self.sent_gauge.clear()
+        self.sent.clear()
+        self.sent_detail.clear()
+        self.sent_meta = None
+        self.link.frame(FT_HELLO_ACK, bytes([PROTO_VERSION]))
+        self.poll_soon = time.time()
+
     def handle_midi(self, msg):
         t = msg.type
         if t == "note_on" and msg.velocity > 0 and 48 <= msg.note <= 74:
@@ -2794,22 +2989,18 @@ class Daemon:
             if cc == 117:
                 print("[device] hello, proto v%d — full resync" % val)
                 self.dev_proto = max(1, min(val, PROTO_VERSION))
-                self.need_reset = True
-                self.held.clear()
-                self.chord = None
-                self.sent_text.clear()
-                self.sent_btnleds = None
-                self.sent_gauge.clear()
-                self.sent.clear()
-                self.sent_detail.clear()
-                self.sent_meta = None
-                self.link.frame(FT_HELLO_ACK, bytes([PROTO_VERSION]))
-                self.poll_soon = time.time()
+                self.full_resync()
             elif cc == 116:
                 proto = max(1, min(val, PROTO_VERSION))
                 if proto != self.dev_proto:    # first heartbeat we hear
                     print("[device] firmware speaks proto v%d" % proto)
                     self.dev_proto = proto
+                    if proto < PROTO_VERSION:
+                        print("[device] older than this daemon (v%d): the "
+                              "newer screens and markers stay off until "
+                              "the firmware is updated" % PROTO_VERSION)
+                        self.toast("FIRMWARE v%d, DAEMON v%d: UPDATE" % (
+                            proto, PROTO_VERSION), F_WARN, 6.0)
                     self.sent.clear()
                     self.sent_detail.clear()
                     self.poll_soon = time.time()
@@ -2939,6 +3130,238 @@ SIM_HELP = ("select N | start | approve | always | deny | interrupt | enter"
             " unmark | urgent | mute | queue | quit")
 
 
+# --- setup: the check-up and the background service ----------------------------
+SERVICE_LABEL = "com.agtdeck.daemon"
+
+
+def service_paths():
+    """(kind, unit file, log file) for this computer, or (None, None, None)."""
+    home = os.path.expanduser("~")
+    if sys.platform == "darwin":
+        return ("launchd",
+                os.path.join(home, "Library", "LaunchAgents",
+                             SERVICE_LABEL + ".plist"),
+                os.path.join(home, "Library", "Logs", "agtdeck.log"))
+    if sys.platform.startswith("linux"):
+        return ("systemd",
+                os.path.join(home, ".config", "systemd", "user",
+                             "agtdeck.service"),
+                None)                          # journalctl --user -u agtdeck
+    return None, None, None
+
+
+def service_text(extra_args):
+    """The launchd plist or systemd unit that keeps the daemon running. It
+    starts this very file with this very Python, and carries the current
+    PATH so the daemon finds herdr, tmux, git and the agent CLIs."""
+    kind, _, log = service_paths()
+    argv = [sys.executable, "-u", os.path.abspath(__file__)] + list(extra_args)
+    path = os.environ.get("PATH", "/usr/bin:/bin")
+    if kind == "launchd":
+        from xml.sax.saxutils import escape
+        return """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" \
+"http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>%s</string>
+  <key>ProgramArguments</key>
+  <array>
+%s
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>%s</string></dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>StandardOutPath</key><string>%s</string>
+  <key>StandardErrorPath</key><string>%s</string>
+</dict>
+</plist>
+""" % (SERVICE_LABEL, "\n".join("    <string>%s</string>" % escape(a)
+                                 for a in argv),
+       escape(path), escape(log), escape(log))
+    if kind == "systemd":
+        return """[Unit]
+Description=Agent Deck host daemon (FM-1 control surface for coding agents)
+
+[Service]
+ExecStart=%s
+Environment=PATH=%s
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+""" % (" ".join('"%s"' % a.replace('"', '\\"') for a in argv), path)
+    return None
+
+
+def service_install(extra_args, dry_run=False):
+    kind, unit, log = service_paths()
+    text = service_text(extra_args)
+    if not text:
+        print("[service] no service support on %s: start the daemon from "
+              "your own startup items" % sys.platform)
+        return 1
+    if dry_run:
+        print("# %s\n%s" % (unit, text), end="")
+        return 0
+    os.makedirs(os.path.dirname(unit), exist_ok=True)
+    with open(unit, "w") as f:
+        f.write(text)
+    print("[service] wrote %s" % unit)
+    if kind == "launchd":
+        dom = "gui/%d" % os.getuid()
+        subprocess.run(["launchctl", "bootout", dom, unit],
+                       capture_output=True)   # an older copy, if loaded
+        r = subprocess.run(["launchctl", "bootstrap", dom, unit],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            print("[service] launchctl: %s" % (r.stderr.strip() or
+                                               r.returncode))
+            return 1
+        print("[service] running, and at every login. Log: %s" % log)
+    else:
+        subprocess.run(["systemctl", "--user", "daemon-reload"])
+        r = subprocess.run(["systemctl", "--user", "enable", "--now",
+                            "agtdeck.service"])
+        if r.returncode != 0:
+            return 1
+        print("[service] running, and at every login. Log: "
+              "journalctl --user -u agtdeck -f")
+    print("[service] to remove it: agtdeck --uninstall-service")
+    return 0
+
+
+def service_uninstall():
+    kind, unit, _ = service_paths()
+    if not kind:
+        return 1
+    if kind == "launchd":
+        subprocess.run(["launchctl", "bootout", "gui/%d" % os.getuid(), unit],
+                       capture_output=True)
+    else:
+        subprocess.run(["systemctl", "--user", "disable", "--now",
+                        "agtdeck.service"], capture_output=True)
+    if os.path.exists(unit):
+        os.remove(unit)
+        print("[service] removed %s" % unit)
+    else:
+        print("[service] nothing installed (%s)" % unit)
+    return 0
+
+
+def doctor(args):
+    """Check everything the daemon needs and say what is wrong. Changes
+    nothing. Returns 0 when it could run, 1 when something must be fixed."""
+    bad = [0]
+
+    def row(ok, what, detail=""):
+        mark = {True: "ok  ", False: "FAIL", None: "--  "}[ok]
+        if ok is False:
+            bad[0] += 1
+        print("  %s %-14s %s" % (mark, what, detail))
+    print("Agent Deck %s, protocol v%d" % (VERSION, PROTO_VERSION))
+    row(sys.version_info >= (3, 8), "python", "%s (%s)" % (
+        platform.python_version(), sys.executable))
+    # the FM-1
+    try:
+        import mido
+        try:
+            pin, pout, ins, outs = MidiLink.find_ports(mido, args.port)
+            row(bool(pin and pout), "FM-1 port", "%s" % pin if pin and pout
+                else "none of the MIDI ports looks like an FM-1: %s. Is it "
+                "plugged in and running Agent Deck?" % (ins or "(no ports)"))
+        except Exception as e:
+            row(False, "MIDI", "cannot list MIDI ports: %s" % e)
+    except ImportError:
+        row(False, "mido", "not installed: pip install mido python-rtmidi "
+            "(--simulate works without)")
+    # the config
+    cfg = None
+    try:
+        cfg, cfg_path = load_config(args.config)
+        row(True, "config", cfg_path or "defaults (no %s)" %
+            "~/.config/agtdeck/config.json")
+    except BackendError as e:
+        row(False, "config", str(e))
+    for key in ("auto_never", "auto_only"):
+        for pat in (cfg or {}).get(key) or []:
+            try:
+                re.compile(str(pat))
+            except re.error as e:
+                row(False, key, "%r is not a regular expression: %s"
+                    % (pat, e))
+    if cfg:
+        row(None, "auto-approve", "%d never-patterns%s" % (
+            len(cfg.get("auto_never") or []),
+            ", allow-list of %d" % len(cfg["auto_only"])
+            if cfg.get("auto_only") else ", no allow-list"))
+        found = [k for k, c in sorted((cfg.get("agents") or {}).items())
+                 if shutil.which(str(c).split()[0])]
+        row(bool(found), "agent CLIs", ", ".join(found) if found else
+            "none of %s is on PATH" % ", ".join(sorted(cfg["agents"])))
+    # the backend
+    sock = args.herdr_socket or default_herdr_socket(args.herdr_session)
+    have_herdr = os.path.exists(sock)
+    if args.backend in ("herdr", "auto") and (have_herdr or
+                                              args.backend == "herdr"):
+        try:
+            n = len(HerdrBackend(sock).list_agents())
+            row(True, "herdr", "%s, %d agent%s" % (sock, n,
+                                                   "" if n == 1 else "s"))
+        except Exception as e:
+            row(False, "herdr", "%s: %s" % (sock, e))
+    else:
+        row(None, "herdr", "no socket at %s" % sock)
+    if args.backend == "tmux" or (args.backend == "auto" and not have_herdr):
+        if not shutil.which("tmux"):
+            row(False, "tmux", "not installed, and no Herdr socket either")
+        else:
+            try:
+                n = len(TmuxBackend().list_agents())
+                row(True, "tmux", "%d pane%s" % (n, "" if n == 1 else "s"))
+            except Exception as e:
+                row(None, "tmux", "no server running yet (%s)" % e)
+    logs = os.path.expanduser(CLAUDE_PROJECTS)
+    row(None if not os.path.isdir(logs) else True, "claude logs",
+        logs if os.path.isdir(logs) else "%s not found: INFO, gauges and "
+        "blocked reasons stay empty" % logs)
+    kind, unit, _ = service_paths()
+    row(None, "service", "%s installed" % unit if unit and
+        os.path.exists(unit) else "not installed (--install-service)")
+    print("%s" % ("all good" if not bad[0] else
+                  "%d thing%s to fix" % (bad[0], "" if bad[0] == 1 else "s")))
+    return 1 if bad[0] else 0
+
+
+def watch_link(d, port, event_q):
+    """The link to use from here on: the same one while the FM-1 is there, a
+    NullLink once it is gone, a fresh MidiLink (and a full resync) when it
+    is back. Called every couple of seconds."""
+    link = d.link
+    if isinstance(link, MidiLink):
+        if link.alive():
+            return link
+        print("[midi] the FM-1 is gone (unplugged?) - waiting for it")
+        link.close()
+        return NullLink()
+    try:
+        link = MidiLink(port, event_q)
+    except BackendError:
+        return d.link                          # still not there
+    except Exception as e:                     # there, but not ready yet
+        print("[midi] cannot open the FM-1 yet: %s" % e)
+        return d.link
+    print("[midi] the FM-1 is back - full resync")
+    d.link = link
+    d.dev_proto = 1                            # until it says
+    d.full_resync()
+    return link
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Agent Deck host daemon")
     ap.add_argument("--backend", choices=["herdr", "tmux", "auto"],
@@ -2953,13 +3376,50 @@ def main(argv=None):
                     help="seconds between backend polls (default 1.0)")
     ap.add_argument("--config", default=None,
                     help="JSON config (default: "
-                         "~/.config/agentdeck/config.json if present)")
+                         "~/.config/agtdeck/config.json if present)")
+    ap.add_argument("--no-wait", action="store_true",
+                    help="exit when no FM-1 is found, instead of waiting "
+                         "for one to be plugged in")
+    ap.add_argument("--doctor", action="store_true",
+                    help="check the FM-1, the config and the backend, "
+                         "report, and exit")
+    ap.add_argument("--install-service", action="store_true",
+                    help="start the daemon at every login (launchd on "
+                         "macOS, systemd --user on Linux), with the other "
+                         "options given here")
+    ap.add_argument("--uninstall-service", action="store_true")
+    ap.add_argument("--print-service", action="store_true",
+                    help="show what --install-service would write")
+    ap.add_argument("--print-config", action="store_true",
+                    help="print the default config as JSON and exit")
+    ap.add_argument("--version", action="version",
+                    version="agtdeck %s (protocol v%d)"
+                    % (VERSION, PROTO_VERSION))
     args = ap.parse_args(argv)
+    if not (args.print_config or args.print_service):
+        adopt_old_config_dir()
+    if args.print_config:
+        print(json.dumps(DEFAULT_CONFIG, indent=2))
+        return 0
+    if args.doctor:
+        return doctor(args)
+    if args.uninstall_service:
+        return service_uninstall()
+    if args.install_service or args.print_service:
+        keep = ["--backend", args.backend, "--poll", str(args.poll)]
+        for flag, val in (("--port", args.port),
+                          ("--herdr-session", args.herdr_session),
+                          ("--herdr-socket", args.herdr_socket),
+                          ("--config", args.config and
+                           os.path.abspath(os.path.expanduser(args.config)))):
+            if val:
+                keep += [flag, val]
+        return service_install(keep, dry_run=args.print_service)
 
     try:
         cfg, cfg_path = load_config(args.config)
     except BackendError as e:
-        print("[agentdeck] %s" % e, file=sys.stderr)
+        print("[agtdeck] %s" % e, file=sys.stderr)
         return 2
 
     backend = None
@@ -2977,18 +3437,22 @@ def main(argv=None):
         try:
             link = MidiLink(args.port, event_q)
         except BackendError as e:
-            print("[agentdeck] %s" % e, file=sys.stderr)
-            return 1
+            print("[agtdeck] %s" % e, file=sys.stderr)
+            if args.no_wait or "mido" in str(e):
+                return 1
+            print("[agtdeck] waiting for an FM-1 to be plugged in "
+                  "(--no-wait to exit instead)")
+            link = NullLink()
     d = Daemon(backend, link, cfg, args.simulate)
-    print("[agentdeck] backend=%s mode=%s proto=v%d"
+    print("[agtdeck] backend=%s mode=%s proto=v%d"
           % (backend.name, "simulate" if args.simulate else "midi",
              PROTO_VERSION))
     if isinstance(backend, HerdrBackend):
-        print("[agentdeck] herdr socket: %s" % backend.path)
-    print("[agentdeck] config: %s, %d prompt presets"
+        print("[agtdeck] herdr socket: %s" % backend.path)
+    print("[agtdeck] config: %s, %d prompt presets"
           % (cfg_path or "defaults", len(d.presets)))
     if args.simulate:
-        print("[agentdeck] commands: " + SIM_HELP)
+        print("[agtdeck] commands: " + SIM_HELP)
 
         def reader():
             for line in sys.stdin:
@@ -2998,9 +3462,13 @@ def main(argv=None):
 
     d.link.frame(FT_HELLO_ACK, bytes([PROTO_VERSION]))
     next_poll = 0.0
+    next_link = 0.0
     try:
         while True:
             now = time.time()
+            if not args.simulate and now >= next_link:
+                next_link = now + 2.0
+                d.link = watch_link(d, args.port, event_q)
             herdr_news = getattr(backend, "dirty", lambda: False)()
             if now >= next_poll or (d.poll_soon and now >= d.poll_soon) or \
                     (herdr_news and now >= next_poll - args.poll + 0.25):
@@ -3017,14 +3485,14 @@ def main(argv=None):
                 if ev[0] == "midi":
                     d.handle_midi(ev[1])
                 elif ev[0] == "cmd" and not d.handle_command(ev[1]):
-                    print("[agentdeck] bye")
+                    print("[agtdeck] bye")
                     return 0
                 try:
                     ev = event_q.get_nowait()
                 except queue.Empty:
                     ev = None
     except KeyboardInterrupt:
-        print("\n[agentdeck] interrupted")
+        print("\n[agtdeck] interrupted")
         return 0
 
 

@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Deck config editor</title>
+<style>
+  :root { --bg: #fbfaf8; --ink: #1c1d22; --dim: #62646e; --rule: #dcd9d2; --card: #ffffff;
+          --field: #f4f3f0; --acc: #6a4fd0; --acc-ink: #ffffff; --warn: #b86a00; --bad: #b3261e; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111216; --ink: #e9e9ee; --dim: #9a9ca8; --rule: #2c2e37; --card: #191b21;
+            --field: #22252d; --acc: #b48cff; --acc-ink: #15121f; --warn: #ffb03a; --bad: #ff6b5e; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 24px 16px 60px; }
+  h1 { font-size: 26px; margin: 0 0 4px; } h1 span { color: var(--acc); }
+  .lede { color: var(--dim); margin: 0 0 18px; max-width: 72ch; }
+  section { background: var(--card); border: 1px solid var(--rule); border-radius: 10px;
+            padding: 14px 16px; margin: 0 0 14px; }
+  h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--acc); margin: 0 0 4px; }
+  .hint { color: var(--dim); font-size: 13px; margin: 0 0 10px; }
+  label { display: block; font-weight: 600; margin: 10px 0 3px; }
+  label small { font-weight: 400; color: var(--dim); }
+  input[type=text], input[type=number], textarea, select {
+    width: 100%; font: inherit; color: inherit; background: var(--field);
+    border: 1px solid var(--rule); border-radius: 6px; padding: 7px 9px; }
+  textarea { font: 13px/1.45 ui-monospace, "SF Mono", Menlo, monospace; resize: vertical; }
+  .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0 16px; }
+  .check { display: flex; gap: 8px; align-items: baseline; font-weight: 400; margin: 8px 0; }
+  .check input { flex: none; }
+  .preset { border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; margin: 0 0 8px; }
+  .preset .top { display: flex; gap: 8px; align-items: center; }
+  .preset .n { color: var(--dim); font: 600 12px ui-monospace, monospace; flex: none; width: 2.2em; }
+  .preset .top input { flex: 1; min-width: 0; }
+  button { font: inherit; cursor: pointer; border-radius: 6px; padding: 6px 12px;
+           border: 1px solid var(--rule); background: var(--field); color: var(--ink); }
+  button.primary { background: var(--acc); color: var(--acc-ink); border-color: var(--acc); font-weight: 600; }
+  button.x { padding: 4px 9px; flex: none; }
+  .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0 0; }
+  pre { background: var(--field); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px;
+        overflow-x: auto; font: 13px/1.45 ui-monospace, "SF Mono", Menlo, monospace; margin: 8px 0 0;
+        max-height: 340px; }
+  .err { color: var(--bad); font-size: 13px; margin: 4px 0 0; min-height: 1em; }
+  code { font: 13px ui-monospace, "SF Mono", Menlo, monospace; background: var(--field);
+         padding: 1px 5px; border-radius: 4px; }
+  a { color: var(--acc); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Agent <span>Deck</span> config editor</h1>
+  <p class="lede">Edit the daemon's settings here and save the result as
+  <code>~/.config/agtdeck/config.json</code> on the computer the daemon runs on, then restart
+  the daemon. Nothing leaves this page: it does not talk to your FM-1 or your computer, it only
+  builds a file for you to download. Only what you change is written; everything else keeps the
+  daemon's default.</p>
+
+  <section>
+    <h2>Start from</h2>
+    <p class="hint">The defaults, or a config you already have.</p>
+    <div class="bar">
+      <input type="file" id="file" accept=".json,application/json">
+      <button id="reset">Back to defaults</button>
+    </div>
+    <p class="err" id="loaderr"></p>
+  </section>
+
+  <section>
+    <h2>Prompt presets</h2>
+    <p class="hint">PRESETS arms one, SEQ sends it; SEQ + key N sends number N. The label is what the
+    screen shows. One line of text is a prompt; several lines are a pipeline, one step per finished turn.</p>
+    <div id="presets"></div>
+    <button id="addpreset">Add a preset</button>
+  </section>
+
+  <section>
+    <h2>Auto-approve</h2>
+    <p class="hint">Regular expressions, one per line, case-insensitive, matched against what the agent
+    wants to run and the prompt on screen. This is a text match, not a sandbox.</p>
+    <label for="auto_never">Never auto-approve <small>(a match is left to you, with an alert)</small></label>
+    <textarea id="auto_never" rows="7" spellcheck="false"></textarea>
+    <p class="err" id="err_auto_never"></p>
+    <label for="auto_only">Only auto-approve <small>(when not empty: nothing else is auto-approved)</small></label>
+    <textarea id="auto_only" rows="4" spellcheck="false" placeholder="npm (test|run lint)&#10;git (status|diff|log)"></textarea>
+    <p class="err" id="err_auto_only"></p>
+  </section>
+
+  <section>
+    <h2>Agents</h2>
+    <div class="row">
+      <div><label for="default_agent">PLAY starts</label><select id="default_agent"></select></div>
+      <div><label for="spawn_cwd">New agents start in <small>(empty: next to the selected one)</small></label>
+        <input type="text" id="spawn_cwd" placeholder="~/dev/project"></div>
+    </div>
+    <label for="agents">Command per agent kind <small>(kind = command, one per line; add flags here)</small></label>
+    <textarea id="agents" rows="5" spellcheck="false"></textarea>
+    <label for="projects">Extra directories for MENU &gt; NEW AGENT <small>(one per line)</small></label>
+    <textarea id="projects" rows="3" spellcheck="false" placeholder="~/dev/api-server"></textarea>
+    <label for="commands">MENU &gt; THIS AGENT &gt; COMMANDS <small>(one per line)</small></label>
+    <textarea id="commands" rows="4" spellcheck="false"></textarea>
+  </section>
+
+  <section>
+    <h2>Behaviour</h2>
+    <label class="check"><input type="checkbox" id="queue_when_working"> Hold a prompt for a WORKING agent until its turn is over</label>
+    <label class="check"><input type="checkbox" id="follow"> Move the selection to an agent when it blocks</label>
+    <label class="check"><input type="checkbox" id="focus_on_edit"> EDIT also focuses the pane on the computer</label>
+    <label class="check"><input type="checkbox" id="notify"> Desktop notification when an agent blocks, finishes or errors</label>
+    <div class="row">
+      <div><label for="repeat_max">Repeat mode stops after <small>sends</small></label><input type="number" id="repeat_max" min="1" max="99"></div>
+      <div><label for="nag_minutes">Alert again while blocked every <small>minutes, 0 = off</small></label><input type="number" id="nag_minutes" min="0" max="120"></div>
+      <div><label for="ctx_warn_pct">Warn when context passes <small>%, 0 = never</small></label><input type="number" id="ctx_warn_pct" min="0" max="100"></div>
+      <div><label for="ctx_window">A full context is <small>tokens</small></label><input type="number" id="ctx_window" min="1000" step="1000"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Sounds</h2>
+    <label class="check"><input type="checkbox" id="sounds"> Sounds at all</label>
+    <label class="check"><input type="checkbox" id="ui_sounds"> Quiet feedback sounds as controls act</label>
+    <div class="row"><div><label for="alert">A BLOCKED agent announces itself</label>
+      <select id="alert"><option value="loud">loud: the long alert</option><option value="normal">normal: the short chime</option></select></div></div>
+  </section>
+
+  <section>
+    <h2>Your config.json</h2>
+    <p class="hint" id="summary"></p>
+    <div class="bar">
+      <button class="primary" id="download">Download config.json</button>
+      <button id="copy">Copy</button>
+      <span class="hint" id="copied" style="margin:0"></span>
+    </div>
+    <pre id="out"></pre>
+    <p class="hint" style="margin-top:10px">Check it with <code>agtdeck --doctor</code>. The full list of
+    settings is in <a href="https://github.com/kevinelliott/fm-1-agent-deck#config">the README</a>.</p>
+  </section>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const LISTS = ["auto_never", "auto_only", "projects", "commands"];
+const BOOLS = ["queue_when_working", "follow", "focus_on_edit", "notify", "sounds", "ui_sounds"];
+const NUMS = ["repeat_max", "nag_minutes", "ctx_warn_pct", "ctx_window"];
+// Used when defaults.json cannot be fetched (the page opened from a file).
+const FALLBACK = { presets: ["continue"], default_agent: "claude",
+  agents: { claude: "claude", codex: "codex", opencode: "opencode", grok: "grok", copilot: "copilot" },
+  spawn_cwd: null, projects: [], queue_when_working: false, auto_never: [], auto_only: [], follow: false,
+  repeat_max: 10, nag_minutes: 0, commands: [], ctx_window: 200000, ctx_warn_pct: 80, notify: false,
+  sounds: true, ui_sounds: true, alert: "loud", focus_on_edit: true };
+const EDITED = ["presets", "agents", "default_agent", "spawn_cwd", "alert", ...LISTS, ...BOOLS, ...NUMS];
+let defaults = FALLBACK, unknown = {};
+
+const lines = (text) => text.split("\n").map((s) => s.trim()).filter(Boolean);
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+function presetRow(p) {
+  const steps = typeof p === "string" ? [p] : p.steps || [p.text || ""];
+  const label = typeof p === "string" ? "" : p.label || "";
+  const div = document.createElement("div");
+  div.className = "preset";
+  div.innerHTML = '<div class="top"><span class="n"></span>' +
+    '<input type="text" class="label" placeholder="label on the screen (optional)">' +
+    '<button class="x" title="move up">&uarr;</button><button class="x" title="remove">&times;</button></div>' +
+    '<textarea class="steps" rows="2" spellcheck="false" placeholder="what is sent; more lines = a pipeline"></textarea>';
+  div.querySelector(".label").value = label;
+  const ta = div.querySelector(".steps");
+  ta.value = steps.join("\n");
+  ta.rows = Math.max(2, steps.length);
+  const [up, del] = div.querySelectorAll("button");
+  up.onclick = () => { if (div.previousElementSibling) div.parentNode.insertBefore(div, div.previousElementSibling); render(); };
+  del.onclick = () => { div.remove(); render(); };
+  return div;
+}
+
+function readPresets() {
+  return [...$("presets").children].map((div) => {
+    const label = div.querySelector(".label").value.trim();
+    const steps = lines(div.querySelector(".steps").value);
+    if (!steps.length) return null;
+    if (steps.length > 1) return { label: label || steps[0], steps };
+    return label && label !== steps[0] ? { label, text: steps[0] } : steps[0];
+  }).filter(Boolean);
+}
+
+function fill(cfg) {
+  $("presets").replaceChildren(...cfg.presets.map(presetRow));
+  for (const k of LISTS) $(k).value = (cfg[k] || []).join("\n");
+  for (const k of BOOLS) $(k).checked = !!cfg[k];
+  for (const k of NUMS) $(k).value = cfg[k];
+  $("agents").value = Object.entries(cfg.agents || {}).map(([k, v]) => k + " = " + v).join("\n");
+  $("default_agent").replaceChildren(...Object.keys(cfg.agents || {}).map((k) => new Option(k, k)));
+  $("default_agent").value = cfg.default_agent;
+  $("spawn_cwd").value = cfg.spawn_cwd || "";
+  $("alert").value = cfg.alert === "normal" ? "normal" : "loud";
+  render();
+}
+
+function current() {
+  const cfg = { presets: readPresets() };
+  for (const k of LISTS) cfg[k] = lines($(k).value);
+  for (const k of BOOLS) cfg[k] = $(k).checked;
+  for (const k of NUMS) cfg[k] = Number($(k).value) || 0;
+  cfg.agents = Object.fromEntries(lines($("agents").value).map((ln) => {
+    const i = ln.indexOf("=");
+    return i < 0 ? [ln, ln] : [ln.slice(0, i).trim(), ln.slice(i + 1).trim()];
+  }).filter(([k, v]) => k && v));
+  cfg.default_agent = $("default_agent").value || defaults.default_agent;
+  cfg.spawn_cwd = $("spawn_cwd").value.trim() || null;
+  cfg.alert = $("alert").value;
+  return cfg;
+}
+
+function checkPatterns(key) {
+  const bad = lines($(key).value).filter((p) => { try { new RegExp(p, "i"); return false; } catch { return true; } });
+  $("err_" + key).textContent = bad.length ? "Not a regular expression: " + bad.join("   ") : "";
+}
+
+function render() {
+  [...$("presets").children].forEach((d, i) => { d.querySelector(".n").textContent = "P" + (i + 1); });
+  const cfg = current(), out = {};
+  for (const k of Object.keys(cfg)) if (!same(cfg[k], defaults[k])) out[k] = cfg[k];
+  Object.assign(out, unknown);
+  checkPatterns("auto_never"); checkPatterns("auto_only");
+  const n = Object.keys(out).length;
+  $("summary").textContent = n ? n + " setting" + (n === 1 ? "" : "s") + " changed from the defaults."
+    : "Nothing changed: the daemon needs no config file for this.";
+  $("out").textContent = JSON.stringify(out, null, 2);
+}
+
+function load(user) {
+  const cfg = JSON.parse(JSON.stringify(defaults));
+  unknown = {};
+  for (const [k, v] of Object.entries(user)) {
+    if (!EDITED.includes(k)) unknown[k] = v;               // kept as it is, not edited here
+    else if (k === "agents" && v && typeof v === "object") Object.assign(cfg.agents, v);
+    else cfg[k] = v;
+  }
+  fill(cfg);
+}
+
+$("file").onchange = async (e) => {
+  $("loaderr").textContent = "";
+  const f = e.target.files[0];
+  if (!f) return;
+  try {
+    const user = JSON.parse(await f.text());
+    if (!user || typeof user !== "object" || Array.isArray(user)) throw new Error("expected a JSON object");
+    load(user);
+  } catch (err) { $("loaderr").textContent = f.name + ": " + err.message; }
+};
+$("reset").onclick = () => { $("file").value = ""; load({}); };
+$("addpreset").onclick = () => { $("presets").append(presetRow("")); render(); };
+document.querySelector("main").addEventListener("input", render);
+$("download").onclick = () => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([$("out").textContent + "\n"], { type: "application/json" }));
+  a.download = "config.json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+$("copy").onclick = async () => {
+  try { await navigator.clipboard.writeText($("out").textContent); $("copied").textContent = "copied"; }
+  catch { $("copied").textContent = "select the text below and copy it"; }
+  setTimeout(() => { $("copied").textContent = ""; }, 2500);
+};
+
+fetch("defaults.json").then((r) => r.ok ? r.json() : Promise.reject(new Error(r.status)))
+  .then((d) => { defaults = d; }, () => {})
+  .finally(() => load({}));
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # Build the firmware package on GitHub from this repository's source and sign it,
 # with The Firmware Hub's shared workflow (https://thefirmwarehub.com/kb/#sign).
-# Pushing a version tag (v0.6.3) builds agentdeck-0.6.3.fwsc, attests it and
+# Pushing a version tag (v0.7) builds agtdeck-0.7.fwsc, attests it and
 # publishes it as that tag's release. Do not replace the file by hand afterwards.
 name: release
 on:
@@ -14,6 +14,8 @@ jobs:
       id-token: write        # the signing certificate
       attestations: write    # the attestation
     with:
-      # firmware/agentdeck.c is the app; the Dinghy tree builds it as src/dinghy.c
-      build: cp firmware/agentdeck.c firmware-build/firmware/src/dinghy.c && firmware-build/build.sh --release "${GITHUB_REF_NAME#v}"
+      # firmware/agtdeck.c is the app; the Dinghy tree builds it as src/dinghy.c
+      build: cp firmware/agtdeck.c firmware-build/firmware/src/dinghy.c && firmware-build/build.sh --release "${GITHUB_REF_NAME#v}"
       packages: firmware-build/build/*.fwsc
+      # a failing test stops the release
+      test: python3 host/test_daemon.py && sh tools/host_test.sh

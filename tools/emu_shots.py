@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """emu_shots.py - the README's screenshots, from the packaged firmware.
 
-Boots the newest dist/agentdeck-*.fwsc in fm1-emu once per scene, feeds it
+Boots the newest dist/agtdeck-*.fwsc in fm1-emu once per scene, feeds it
 the frames a daemon would send for that scene (through the MIDI IN jack,
 as tools/emu_test.py does), presses what needs pressing, and saves the LCD
 as docs/shot-*.png (2x, crisp pixels). It also plays them in the display of
@@ -53,6 +53,10 @@ MORE = ["search", "payments", "ingest", "worker", "gateway", "cli", "sdk-js",
         "sdk-py", "billing-ui", "admin", "etl", "ml-train", "ml-serve",
         "notifier", "scheduler", "cache", "edge", "metrics", "tracing"]
 STATES = [WORKING, IDLE, WORKING, DONE, IDLE, BLOCKED, WORKING, IDLE, ERROR]
+
+
+MOTION, MOTION_MS = 8, 125              # frames per shot, and their spacing
+MOTION_DIR = os.path.join(ROOT, "build", "motion")
 
 
 class Scene:
@@ -118,9 +122,14 @@ class Scene:
         self.t += 150
 
     def snap(self, name, settle=1300):
-        """Shoot once the screen has had `settle` ms to catch up."""
+        """Shoot once the screen has had `settle` ms to catch up, then
+        MOTION - 1 more frames a little apart: the spinner turning, the
+        warning sign blinking. Those go to build/motion/ for the intro."""
         self.t += settle
         self.snaps.append((self.t, name))
+        for k in range(1, MOTION):
+            self.t += MOTION_MS
+            self.snaps.append((self.t, "%s~%d" % (name, k)))
         self.t += 100
 
 
@@ -285,12 +294,14 @@ def run_scene(emu, fwsc, name, out):
         ok = True
         for t, shot in s.snaps:
             bmp = os.path.join(tmp, "work", "lcd_%d.bmp" % t)
-            png = os.path.join(out, "shot-%s.png" % shot)
+            still = "~" not in shot
+            png = os.path.join(out if still else MOTION_DIR,
+                               "shot-%s.png" % shot)
             if not os.path.isfile(bmp) or emu_test.convert(bmp, png) is None \
                     or not emu_test.nonblank(png):
                 print("  MISSING or blank: %s" % shot, file=sys.stderr)
                 ok = False
-            else:
+            elif still:
                 print("  %s" % os.path.relpath(png, ROOT))
         return ok
 
@@ -336,18 +347,33 @@ def make_intro(out):
     hero = hero.resize((INTRO_W, round(hero.height * k)), Image.LANCZOS)
     x, y, size = (round(v * k) for v in HERO_LCD)
     hero.paste((5, 5, 7), (x - 2, y - 2, x + size + 2, y + size + 2))
-    screens, times = [], []
+    screens, times, stills = [], [], []
     for shot, secs in INTRO:
         path = os.path.join(out, "shot-%s.png" % shot)
         if not os.path.isfile(path):
             return None
-        screens.append(Image.open(path).convert("RGB").resize(
-            (size, size), Image.NEAREST))
-        times.append(int(secs * 1000))
+        # the shot, then its motion frames if this run (or an earlier one)
+        # left them in build/motion/: cycled for as long as the shot shows
+        paths = [path] + [p for p in (os.path.join(
+            MOTION_DIR, "shot-%s~%d.png" % (shot, k))
+            for k in range(1, MOTION)) if os.path.isfile(p)]
+        if len(paths) < MOTION:
+            paths = [path]
+        frames = [Image.open(p).convert("RGB").resize((size, size),
+                                                      Image.NEAREST)
+                  for p in paths]
+        stills.append(frames[0])
+        if len(frames) == 1:
+            screens.append(frames[0])
+            times.append(int(secs * 1000))
+            continue
+        for k in range(max(1, round(secs * 1000 / MOTION_MS))):
+            screens.append(frames[k % len(frames)])
+            times.append(MOTION_MS)
     # one palette for the photo and every screen, so no frame shifts colour
     sheet = Image.new("RGB", (hero.width, hero.height + size * 3))
     sheet.paste(hero, (0, 0))
-    for i, scr in enumerate(screens):
+    for i, scr in enumerate(stills[:18]):
         sheet.paste(scr, (i % 6 * size, hero.height + i // 6 * size))
     pal = sheet.quantize(colors=255, method=Image.MEDIANCUT,
                          dither=Image.NONE)
@@ -391,6 +417,7 @@ def main():
         print("fm1-emu not found: run tools/get_emu.sh", file=sys.stderr)
         return 2
     os.makedirs(args.out, exist_ok=True)
+    os.makedirs(MOTION_DIR, exist_ok=True)
     ok = True
     for name in args.scenes or list(SCENES):
         if name not in SCENES:

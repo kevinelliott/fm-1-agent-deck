@@ -1,0 +1,7 @@
+# the image needs only host/, LICENSE and PROTOCOL.md
+*
+!host/agtdeck.py
+!host/config.example.json
+!LICENSE
+!PROTOCOL.md
+!host/docker/entrypoint.sh
