@@ -1008,3 +1008,5 @@ Agent Deck stands on a remarkable few months of FM-1 community work:
 GPL-3.0, inherited from Dinghy/Felucca. See `LICENSE`
 and `firmware-build/LICENSING.md`; keep the copyright headers if you
 redistribute.
+
+You can also try FM-1 Agent Deck in the browser, no flashing needed, in the free community [FM-1 Emulator](https://fm1-emulator.atst.tools/).
